@@ -1,0 +1,3 @@
+LIBRARY "ObjectMotionBlur_LK"
+EXPORTS
+    process_motion_blur

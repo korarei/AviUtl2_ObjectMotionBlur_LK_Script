@@ -1,0 +1,76 @@
+name: releaser
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup MSVC (x64)
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    - name: Build
+      run: |
+        cd ${{ github.workspace }}
+        cmake -S dll_src -B dll_src/build -DCMAKE_GENERATOR_PLATFORM=x64
+        cmake --build dll_src/build --config Release
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: publish
+        path: ${{ github.workspace }}/dll_src/build/Release/*.dll
+  
+  releaser:
+    needs: build
+    runs-on: ubuntu-latest
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        submodules: "recursive"
+
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: publish
+        path: ${{ github.workspace }}/build/publish
+
+    - name: Extract script name
+      run: |
+        REPO_BASE=$(basename "${{ github.repository }}")
+        MIDDLE_PART=$(echo "$REPO_BASE" | sed 's/AviUtl2_\(.*\)_Script/\1/')
+        echo "SCRIPT_NAME=$MIDDLE_PART" >> $GITHUB_ENV
+
+    - name: Setup python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Build script
+      run: |
+          python tools/build.py --tag ${{ github.ref_name }}
+
+    - name: Create release
+      uses: softprops/action-gh-release@v2
+      with:
+        name: ${{ env.SCRIPT_NAME }}_${{ github.ref_name }}
+        files: 'build/*.zip'
+        body_path: build/release_note.txt

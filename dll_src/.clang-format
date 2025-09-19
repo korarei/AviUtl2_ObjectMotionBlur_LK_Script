@@ -1,0 +1,29 @@
+BasedOnStyle: Google
+
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 8
+ConstructorInitializerIndentWidth: 4
+AccessModifierOffset: -4
+PointerAlignment: Right
+DerivePointerAlignment: false
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+
+ColumnLimit: 120
+BreakBeforeBinaryOperators: NonAssignment
+AlignOperands: AlignAfterOperator
+BreakConstructorInitializers: AfterColon
+BreakInheritanceList: AfterColon
+AlwaysBreakTemplateDeclarations: Yes
+
+BreakBeforeBraces: Attach
+AlwaysBreakAfterReturnType: TopLevel
+AlignAfterOpenBracket: Align
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortEnumsOnASingleLine: false
+ReflowComments: true
+IncludeBlocks: Preserve
+EmptyLineBeforeAccessModifier: LogicalBlock

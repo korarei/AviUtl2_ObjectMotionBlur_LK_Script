@@ -1,0 +1,112 @@
+#pragma once
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+
+#include "utils.hpp"
+#include "vector_2d.hpp"
+#include "vector_3d.hpp"
+
+#define ZOOM_MIN 1.0e-4f
+
+class Geo {
+public:
+    constexpr Geo() noexcept : flag(false), frame(0u), data{} {}
+    constexpr Geo(bool flag_, std::uint32_t f, const std::array<float, 6> geo) noexcept :
+        flag(flag_), frame(f), data(geo) {}
+
+    [[nodiscard]] constexpr float &operator[](std::size_t i) noexcept { return data[i]; }
+    [[nodiscard]] constexpr const float &operator[](std::size_t i) const noexcept { return data[i]; }
+
+    [[nodiscard]] constexpr Geo operator+(const Geo &other) noexcept {
+        Geo result = *this;
+        for (std::size_t i = 0; i < 6; ++i) result[i] += other[i];
+        return result;
+    }
+
+    [[nodiscard]] constexpr Geo operator-(const Geo &other) noexcept {
+        Geo result = *this;
+        for (std::size_t i = 0; i < 6; ++i) result[i] -= other[i];
+        return result;
+    }
+
+    [[nodiscard]] constexpr Geo operator*(const float &scalar) noexcept {
+        Geo result = *this;
+        for (std::size_t i = 0; i < 6; ++i) result[i] *= scalar;
+        return result;
+    }
+
+    [[nodiscard]] constexpr bool get_flag() const noexcept { return flag; }
+    [[nodiscard]] constexpr bool is_cached(std::uint32_t f) const noexcept { return flag && f == frame; }
+
+private:
+    bool flag;
+    std::uint32_t frame;
+    std::array<float, 6> data;
+};
+
+class Transform {
+public:
+    constexpr Transform() noexcept : data{} {}
+    constexpr Transform(const std::array<float, 6> &tf) noexcept : data(tf) {}
+
+    [[nodiscard]] constexpr Vec2<float> get_center() const noexcept { return Vec2<float>(data[0], data[1]); }
+    [[nodiscard]] constexpr Vec2<float> get_pos() const noexcept { return Vec2<float>(data[2], data[3]); }
+    [[nodiscard]] constexpr float get_rot() const noexcept { return to_rad(data[4]); }
+    [[nodiscard]] constexpr float get_zoom() const noexcept { return std::max(data[5], ZOOM_MIN); }
+
+    constexpr void set_geo(const Geo &geo) noexcept {
+        for (std::size_t i = 0; i < 5; ++i) data[i] += geo[i];
+        data[5] *= geo[5];
+    }
+
+private:
+    std::array<float, 6> data;
+};
+
+class Delta {
+public:
+    // Constructors.
+    Delta(const Transform &from, const Transform &to) noexcept;
+
+    // Getters.
+    [[nodiscard]] constexpr const float get_rot() const noexcept { return rel_rot; }
+    [[nodiscard]] constexpr const float get_scale() const noexcept { return rel_scale; }
+    [[nodiscard]] constexpr const Vec2<float> &get_pos() const noexcept { return rel_pos; }
+    [[nodiscard]] constexpr const Vec2<float> &get_center() const noexcept { return center_to; }
+    [[nodiscard]] constexpr const bool is_moved() const noexcept { return !flag; }
+
+    // Calculate the required samples.
+    [[nodiscard]] constexpr std::uint32_t calc_req_smp(float amt, const Vec2<float> &res) const noexcept;
+
+    // Calculate the HTM (Homogeneous Transformation Matrix).
+    [[nodiscard]] Mat3<float> calc_htm(float amt = 1.0f, std::uint32_t smp = 1u, bool is_inv = false) const noexcept;
+
+    [[nodiscard]] constexpr Vec2<float> calc_drift(float amt = 1.0f, std::uint32_t smp = 1u) const noexcept;
+
+private:
+    float rel_rot, rel_scale;
+    Vec2<float> rel_pos, rel_center, center_to, center_from;
+    float rel_dist;
+    bool flag;
+};
+
+inline constexpr std::uint32_t
+Delta::calc_req_smp(float amt, const Vec2<float> &res) const noexcept {
+    if (flag)
+        return 0u;
+
+    auto size = res + center_from.abs();
+    float r = size.norm(2) * 0.5f;
+    auto req_smps = Vec3<float>(rel_dist, (rel_scale - 1.0f) * r, rel_rot * r) * amt;
+    return static_cast<std::uint32_t>(std::ceil(req_smps.norm(-1)));
+}
+
+inline constexpr Vec2<float>
+Delta::calc_drift(float amt, std::uint32_t smp) const noexcept {
+    float step_amt = smp > 1 ? amt / static_cast<float>(smp) : amt;
+    return -rel_center * step_amt;
+}
