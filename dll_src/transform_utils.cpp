@@ -8,12 +8,11 @@ Delta::Delta(const Transform &from, const Transform &to) noexcept :
     rel_center(from.get_center() - to.get_center()),
     center_to(-to.get_center()),
     center_from(-from.get_center()),
-    rel_dist(rel_pos.norm(2) + rel_center.norm(2)),
-    flag(is_zero(rel_dist) && are_equal(rel_scale, 1.0f) && is_zero(rel_rot)) {}
+    flag(is_zero(rel_pos.norm(2)) && is_zero(rel_center.norm(2)) && are_equal(rel_scale, 1.0f) && is_zero(rel_rot)) {}
 
 Mat3<float>
 Delta::calc_htm(float amt, std::uint32_t smp, bool is_inv) const noexcept {
-    float step_amt = smp > 1 ? amt / static_cast<float>(smp) : amt;
+    float step_amt = smp > 1u ? amt / static_cast<float>(smp) : amt;
     float rot = rel_rot * step_amt;
     float scale = std::pow(rel_scale, step_amt);
     auto pos = rel_pos * step_amt;
