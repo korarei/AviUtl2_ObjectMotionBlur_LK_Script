@@ -10,12 +10,15 @@
 --track@t6:Object ID,0,15000,0,1
 --track@t5:Mix,0,100,0,0.01
 --check@c2:Print Information,0
---track0:X Center,-10000,10000,0,0.01
---track1:Y Center,-10000,10000,0,0.01
 --value@_0:PI,{}
 --[[pixelshader@motion_blur:
 ${SHADER_MOTION_BLUR}
 ]]
+
+if (not pcall(obj.getvalue, "cx")) then
+    debug_print("AviUtl ExEdit2 beta12 or later is required.")
+    return
+end
 
 local function tobool(v, d)
     if (type(v) == "boolean") then
@@ -38,8 +41,6 @@ local geo_ctrl = tonumber(_0.geo_ctrl or s2) s2 = nil
 local obj_id = tonumber(_0.object_id) or t6 t6 = nil -- beta 11a
 local mix = math.min(math.max(tonumber(_0.mix) or t5, 0.0), 100.0) * 0.01 t5 = nil
 local print_info = tobool(_0.print_info, c2 ~= 0) c2 = nil
-local cx = (tonumber(_0.cx) or obj.track0) -- beta 11a
-local cy = (tonumber(_0.cy) or obj.track1) -- beta 11a
 _0 = nil
 
 local ffi = require("ffi")
@@ -84,12 +85,17 @@ local Output = ffi.typeof("Output")
 local gv = obj.getvalue
 
 local dll_path = obj.getinfo("script_path") .. "ObjectMotionBlur_LK.dll"
-local lib = ffi.load(dll_path)
+local ok, lib = pcall(ffi.load, dll_path)
+if (not ok) then
+    debug_print("Dynamic library not found. Hint: Ensure the file path contains only ASCII characters.")
+    return
+end
 
 local smp_lim = (preview_smp_lim == 0 or obj.getinfo("saving")) and render_smp_lim or preview_smp_lim
 local w, h = obj.getpixel()
+local cx, cy = gv("cx"), gv("cy")
 local dt = 1.0 / obj.framerate
-local targets = {0, 1, "x", "y", "rz", "zoom"}
+local targets = {"cx", "cy", "x", "y", "rz", "zoom"}
 
 local param = Param(shutter_angle, smp_lim, ext, resize, geo_cache, geo_ctrl)
 
