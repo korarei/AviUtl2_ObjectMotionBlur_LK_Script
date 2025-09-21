@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20.0)
-project(ObjectMotionBlur_LK VERSION 0.1.0 LANGUAGES CXX)
+project(ObjectMotionBlur_LK VERSION 0.2.0 LANGUAGES CXX)
 
 # Main target definition.
 add_library(${PROJECT_NAME} SHARED
