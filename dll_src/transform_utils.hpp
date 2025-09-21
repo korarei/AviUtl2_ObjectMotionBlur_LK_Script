@@ -14,8 +14,8 @@
 
 class Geo {
 public:
-    constexpr Geo() noexcept : flag(false), frame(0u), data{} {}
-    constexpr Geo(bool flag_, std::uint32_t f, const std::array<float, 6> geo) noexcept :
+    constexpr Geo() noexcept : flag(false), frame(0), data{} {}
+    constexpr Geo(bool flag_, std::size_t f, const std::array<float, 6> geo) noexcept :
         flag(flag_), frame(f), data(geo) {}
 
     [[nodiscard]] constexpr float &operator[](std::size_t i) noexcept { return data[i]; }
@@ -40,11 +40,11 @@ public:
     }
 
     [[nodiscard]] constexpr bool get_flag() const noexcept { return flag; }
-    [[nodiscard]] constexpr bool is_cached(std::uint32_t f) const noexcept { return flag && f == frame; }
+    [[nodiscard]] constexpr bool is_cached(std::size_t f) const noexcept { return flag && f == frame; }
 
 private:
     bool flag;
-    std::uint32_t frame;
+    std::size_t frame;
     std::array<float, 6> data;
 };
 

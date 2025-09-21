@@ -7,23 +7,13 @@
 
 static auto geo_map = GeoMap<8>();
 
-inline static constexpr std::uint32_t
-make_key(std::uint32_t obj_id, std::uint32_t obj_idx) noexcept {
-    std::uint32_t id_t = (obj_idx & 0x3FFFFu) << 14;
-    std::uint32_t id_b = obj_id & 0x3FFFu;
-    std::uint32_t id = id_t | id_b;
-    return id;
-}
-
 static void
-set_init_geo(std::uint32_t ext, std::uint32_t k) noexcept {
-    const std::array<std::uint32_t, 2> key{k, 0u};
-
+set_init_geo(std::uint32_t ext, const Input input) noexcept {
     int flag = 1;
     std::array<Geo, 3> geos{};
 
-    for (std::uint32_t i = 0u; i <= ext; ++i) {
-        if (auto g = geo_map.read({k, i + 1u}))
+    for (std::size_t i = 0; i <= ext; ++i) {
+        if (auto g = geo_map.read(input.obj_id, input.obj_idx, i + 1))
             geos[i] = *g;
         else
             flag = 0;
@@ -34,10 +24,10 @@ set_init_geo(std::uint32_t ext, std::uint32_t k) noexcept {
 
     switch (ext) {
         case 1u:
-            geo_map.write(key, geos[0] * 2.0 - geos[1]);
+            geo_map.write(input.obj_id, input.obj_idx, 0, geos[0] * 2.0 - geos[1]);
             return;
         case 2u:
-            geo_map.write(key, geos[0] * 3.0 - geos[1] * 3.0 + geos[2]);
+            geo_map.write(input.obj_id, input.obj_idx, 0, geos[0] * 3.0 - geos[1] * 3.0 + geos[2]);
             return;
         default:
             return;
@@ -45,10 +35,10 @@ set_init_geo(std::uint32_t ext, std::uint32_t k) noexcept {
 }
 
 static Delta
-calc_delta(const Param &param, Input &input, const std::array<std::uint32_t, 2> &key) noexcept {
+calc_delta(const Param &param, Input &input, std::size_t pos) noexcept {
     input.tf_curr.set_geo(input.geo_curr);
 
-    if (auto geo = param.geo_cache ? geo_map.read(key) : nullptr)
+    if (auto geo = param.geo_cache ? geo_map.read(input.obj_id, input.obj_idx, pos) : nullptr)
         input.tf_prev.set_geo(*geo);
     else
         input.tf_prev.set_geo(input.geo_curr);
@@ -79,28 +69,22 @@ calc_size(Delta &delta, float amt, const Input &input) noexcept {
 
 static void
 cleanup_geo(const Param &param, const Input &input) {
-    constexpr std::uint32_t mask = 0x3FFFu;
-
     if (!input.is_last[0])
         return;
 
-    if (param.geo_cache) {
-        switch (param.geo_ctrl) {
-            case 1:
-                if (input.is_last[1])
-                    geo_map.clear(input.obj_id, mask);
-                break;
-            case 2:
-                geo_map.clear();
-                break;
-            case 3:
-                geo_map.clear(input.obj_id, mask);
-                break;
-            default:
-                break;
-        }
-    } else if (geo_map.has_key0(input.obj_id)) {
-        geo_map.clear(input.obj_id, mask);
+    switch (param.geo_ctrl) {
+        case 1:
+            if (input.is_last[1])
+                geo_map.clear(input.obj_id);
+            break;
+        case 2:
+            geo_map.clear();
+            break;
+        case 3:
+            geo_map.clear(input.obj_id);
+            break;
+        default:
+            break;
     }
 }
 
@@ -112,11 +96,12 @@ process_motion_blur(const CParam *c_param, const CInput *c_input, COutput *c_out
     const auto param = Param(*c_param);
     auto input = Input(*c_input);
 
-    std::uint32_t k = make_key(input.obj_id, input.obj_idx);
     bool flag = param.is_valid && (param.ext || input.frame);
 
+    geo_map.resize(input.obj_id, input.obj_idx, input.obj_num, param.geo_cache);
+
     if (param.geo_cache == 1u || (param.geo_cache == 2u && param.ext && input.frame <= param.ext))
-        geo_map.write({k, input.frame + 1u}, input.geo_curr);
+        geo_map.write(input.obj_id, input.obj_idx, input.frame + 1, input.geo_curr);
 
     if (flag) {
         const float amt = param.shutter_angle / 360.0f;
@@ -126,9 +111,9 @@ process_motion_blur(const CParam *c_param, const CInput *c_input, COutput *c_out
         std::uint32_t smp = 0u;
 
         if (param.geo_cache && !input.frame)
-            set_init_geo(param.ext, k);
+            set_init_geo(param.ext, input);
 
-        auto delta = calc_delta(param, input, {k, (param.geo_cache == 2u && input.frame) ? 7u : input.frame});
+        auto delta = calc_delta(param, input, (param.geo_cache == 2u && input.frame) ? 7 : input.frame);
 
         if (delta.is_moved()) {
             margin = calc_size(delta, amt, input);
@@ -149,9 +134,10 @@ process_motion_blur(const CParam *c_param, const CInput *c_input, COutput *c_out
         *c_output = COutput();
     }
 
-    if (param.geo_cache == 2u)
-        if (auto geo = geo_map.read({k, 7u}); !geo || !geo->is_cached(input.frame))
-            geo_map.write({k, 7u}, input.geo_curr);
+    if (param.geo_cache == 2u) {
+        if (auto geo = geo_map.read(input.obj_id, input.obj_idx, 7); !geo || !geo->is_cached(input.frame))
+            geo_map.write(input.obj_id, input.obj_idx, 7, input.geo_curr);
+    }
 
     cleanup_geo(param, input);
 

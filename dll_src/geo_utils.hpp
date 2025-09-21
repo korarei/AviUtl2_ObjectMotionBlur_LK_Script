@@ -15,56 +15,87 @@ public:
     GeoMap() noexcept = default;
     ~GeoMap() noexcept = default;
 
-    void write(const std::array<std::uint32_t, 2> &key, const Geo &geo) noexcept {
-        std::uint32_t id, offset;
-        calc_block_pos(key[1], id, offset);
+    void resize(std::size_t hash, std::size_t idx, std::size_t num, std::uint32_t mode) noexcept {
+        if (mode == 0u) {
+            clear(hash);
+            return;
+        }
 
-        map[key[0]][id][offset] = geo;
+        auto &list = map[hash];
+        std::size_t size = list.size();
+
+        if (num < size) {
+            std::vector<BlockMap> temp(list.begin(), list.begin() + num);
+            list.swap(temp);
+        } else if (num > size) {
+            list.resize(num);
+        }
+
+        auto &block_map = list[idx];
+
+        if (auto it = block_map.find(0); mode == 2u && it != block_map.end() && block_map.size() != 1) {
+            auto node = block_map.extract(it);
+            BlockMap{}.swap(block_map);
+            block_map.insert(std::move(node));
+        }
+
+        return;
     }
 
-    [[nodiscard]] Geo *read(const std::array<std::uint32_t, 2> &key) noexcept {
-        std::uint32_t id, offset;
-        calc_block_pos(key[1], id, offset);
+    void write(std::size_t hash, std::size_t idx, std::size_t pos, const Geo &geo) noexcept {
+        const auto [id, offset] = calc_block_pos(pos);
 
-        if (auto block = get_block(key[0], id); block && (*block)[offset].get_flag())
+        auto it_hash = map.find(hash);
+        if (it_hash == map.end())
+            return;
+
+        auto &list = it_hash->second;
+        if (idx >= list.size())
+            return;
+
+        auto &block = list[idx][id];
+        block[offset] = geo;
+        return;
+    }
+
+    [[nodiscard]] Geo *read(std::size_t hash, std::size_t idx, std::size_t pos) noexcept {
+        const auto [id, offset] = calc_block_pos(pos);
+
+        if (auto block = get_block(hash, idx, id); block && (*block)[offset].get_flag())
             return &(*block)[offset];
         else
             return nullptr;
     }
 
     void clear() noexcept { MapData{}.swap(map); }
-    void clear(std::uint32_t match_bits, std::uint32_t mask) noexcept {
-        std::vector<std::uint32_t> keys_to_erase;
+    void clear(std::size_t hash) noexcept {
+        auto it_hash = map.find(hash);
+        if (it_hash == map.end())
+            return;
 
-        for (auto &[key1, block_map] : map) {
-            if ((key1 & mask) != match_bits)
-                continue;
-
-            BlockMap{}.swap(block_map);
-            keys_to_erase.push_back(key1);
-        }
-
-        for (std::uint32_t key1 : keys_to_erase) map.erase(key1);
+        auto &list = it_hash->second;
+        std::vector<BlockMap>{}.swap(list);
+        map.erase(hash);
+        return;
     }
-
-    [[nodiscard]] bool has_key0(std::uint32_t key0) const noexcept { return map.find(key0) != map.end(); }
 
 private:
-    using BlockMap = std::map<std::uint32_t, std::array<Geo, N>>;
-    using MapData = std::unordered_map<std::uint32_t, BlockMap>;
+    using BlockMap = std::map<std::size_t, std::array<Geo, N>>;
+    using MapData = std::unordered_map<std::size_t, std::vector<BlockMap>>;
     MapData map{};
 
-    void calc_block_pos(std::uint32_t v, std::uint32_t &id, std::uint32_t &offset) const {
-        id = v / N;
-        offset = v % N;
-    }
+    std::array<std::size_t, 2> calc_block_pos(std::size_t v) const { return {v / N, v % N}; }
 
-    std::array<Geo, N> *get_block(std::uint32_t key, std::uint32_t id) {
-        auto it_key = map.find(key);
-        if (it_key == map.end())
+    std::array<Geo, N> *get_block(std::size_t hash, std::size_t idx, std::size_t id) {
+        auto it_hash = map.find(hash);
+        if (it_hash == map.end())
             return nullptr;
 
-        auto &block_map = it_key->second;
+        auto &list = it_hash->second;
+        if (idx >= list.size())
+            return nullptr;
+
+        auto &block_map = list[idx];
         auto it_block = block_map.find(id);
         if (it_block == block_map.end())
             return nullptr;
