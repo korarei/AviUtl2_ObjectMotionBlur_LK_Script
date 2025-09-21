@@ -57,11 +57,8 @@ calc_delta(const Param &param, Input &input, const std::array<std::uint32_t, 2> 
 }
 
 static std::array<int, 4>
-calc_size(Delta &delta, float amt, const Input &input, bool enable) noexcept {
+calc_size(Delta &delta, float amt, const Input &input) noexcept {
     std::array<int, 4> margin{};
-
-    if (!enable)
-        return margin;
 
     auto htm = delta.calc_htm(amt);
     auto c_prev = Vec3<float>(delta.get_center(), 1.0f);
@@ -72,10 +69,10 @@ calc_size(Delta &delta, float amt, const Input &input, bool enable) noexcept {
     auto upper_left = static_cast<Vec2<int>>((diff - pos).ceil());
     auto lower_right = static_cast<Vec2<int>>((diff + pos).ceil());
 
-    margin[0] = std::max(margin[0], upper_left.get_y());
-    margin[1] = std::max(margin[1], lower_right.get_y());
-    margin[2] = std::max(margin[2], upper_left.get_x());
-    margin[3] = std::max(margin[3], lower_right.get_x());
+    margin[0] = std::max(upper_left.get_y(), 0);
+    margin[1] = std::max(lower_right.get_y(), 0);
+    margin[2] = std::max(upper_left.get_x(), 0);
+    margin[3] = std::max(lower_right.get_x(), 0);
 
     return margin;
 }
@@ -124,24 +121,33 @@ process_motion_blur(const CParam *c_param, const CInput *c_input, COutput *c_out
     if (flag) {
         const float amt = param.shutter_angle / 360.0f;
 
+        std::array<int, 4> margin{};
+        std::uint32_t req_smp = 0u;
+        std::uint32_t smp = 0u;
+
         if (param.geo_cache && !input.frame)
             set_init_geo(param.ext, k);
 
         auto delta = calc_delta(param, input, {k, (param.geo_cache == 2u && input.frame) ? 7u : input.frame});
-        std::uint32_t smp = std::clamp(delta.calc_req_smp(amt, input.res), 0u, param.smp_lim - 1u);
+
+        if (delta.is_moved()) {
+            margin = calc_size(delta, amt, input);
+            req_smp = static_cast<std::uint32_t>(Vec2<int>(margin[2] + margin[3], margin[0] + margin[1]).norm(2));
+            smp = std::min(req_smp, param.smp_lim - 1u);
+        }
 
         if (smp) {
             auto init_htm = delta.calc_htm(amt, smp, true);
             auto drift = delta.calc_drift(amt, smp);
-            auto margin = calc_size(delta, amt, input, param.resize);
 
-            *c_output = COutput(margin, init_htm, drift, smp);
+            *c_output = COutput(margin, init_htm, drift, smp, req_smp);
         } else {
             flag = false;
             *c_output = COutput();
         }
-    } else
+    } else {
         *c_output = COutput();
+    }
 
     if (param.geo_cache == 2u)
         if (auto geo = geo_map.read({k, 7u}); !geo || !geo->is_cached(input.frame))

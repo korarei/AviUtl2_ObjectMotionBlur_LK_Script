@@ -34,11 +34,12 @@ struct COutput {
     float init_htm[3][3];
     float drift[2];
     int smp;
+    int req_smp;
 
     constexpr COutput() noexcept = default;
     constexpr COutput(const std::array<int, 4> &margin_, const Mat3<float> &init_htm_, const Vec2<float> &drift_,
-                      std::uint32_t smp_) noexcept :
-        smp(smp_) {
+                      std::uint32_t smp_, std::uint32_t req_smp_) noexcept :
+        smp(static_cast<int>(smp_)), req_smp(static_cast<int>(req_smp_)) {
         std::copy(margin_.begin(), margin_.end(), margin);
         for (std::size_t i = 0; i < 3; ++i) std::copy(init_htm_[i].begin(), init_htm_[i].end(), init_htm[i]);
         std::copy(drift_.begin(), drift_.end(), drift);
@@ -56,7 +57,7 @@ struct Param {
 
     constexpr Param(const CParam &c_param) noexcept :
         shutter_angle(std::clamp(c_param.shutter_angle, 0.0f, 360.0f)),
-        smp_lim(static_cast<std::uint32_t>(std::max(c_param.smp_lim, 0))),
+        smp_lim(static_cast<std::uint32_t>(std::max(c_param.smp_lim, 1))),
         ext(static_cast<std::uint32_t>(std::clamp(c_param.ext, 0, 2))),
         resize(c_param.resize),
         geo_cache(static_cast<std::uint32_t>(std::clamp(c_param.geo_cache, 0, 2))),

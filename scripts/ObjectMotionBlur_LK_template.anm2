@@ -68,11 +68,8 @@ pcall(ffi.cdef, [[
         float init_htm[3][3];
         float drift[2];
         int smp;
+        int req_smp;
     } Output;
-
-    typedef struct {
-        float ox, oy, zoom, rz;
-    } Geo;
 
     int process_motion_blur(const Param *param, const Input *input, Output *output);
 ]])
@@ -136,12 +133,16 @@ if (state == 0) then
     local drift = output.drift
     local add = output.margin
 
-    obj.effect("領域拡張", "上", add[0], "下", add[1], "左", add[2], "右", add[3])
-    obj.cx = obj.cx + (add[2] - add[3]) * 0.5 -- beta 11a
-    obj.cy = obj.cy + (add[0] - add[1]) * 0.5 -- beta 11a
+    local w_new, h_new = w, h
 
-    local w_new = w + add[2] + add[3]
-    local h_new = h + add[0] + add[1]
+    if (resize) then
+        obj.effect("領域拡張", "上", add[0], "下", add[1], "左", add[2], "右", add[3])
+        obj.cx = obj.cx + (add[2] - add[3]) * 0.5
+        obj.cy = obj.cy + (add[0] - add[1]) * 0.5
+
+        w_new = w + add[2] + add[3]
+        h_new = h + add[0] + add[1]
+    end
 
     obj.pixelshader("motion_blur", "object", "object", {
         htm[0][0], htm[0][1], htm[0][2], 0.0,
@@ -162,5 +163,5 @@ if (print_info) then
         Object ID       : %d
         Index           : %d
         Required Samples: %d
-    ]], obj_id, obj.index, output.smp))
+    ]], obj_id, obj.index, output.req_smp))
 end
