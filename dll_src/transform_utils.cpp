@@ -6,8 +6,6 @@ Delta::Delta(const Transform &from, const Transform &to) noexcept :
     rel_scale(std::max(to.get_zoom() / from.get_zoom(), ZOOM_MIN)),
     rel_pos((to.get_pos() - from.get_pos()).rotate(-from.get_rot(), 100.0f / from.get_zoom())),
     rel_center(from.get_center() - to.get_center()),
-    center_to(-to.get_center()),
-    center_from(-from.get_center()),
     flag(is_zero(rel_pos.norm(2)) && is_zero(rel_center.norm(2)) && are_equal(rel_scale, 1.0f) && is_zero(rel_rot)) {}
 
 Mat3<float>
