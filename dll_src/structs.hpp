@@ -69,8 +69,8 @@ struct Input {
     Vec2<float> res;
     Vec2<float> pivot;
 
-    std::uint32_t obj_id, obj_idx;
-    std::uint32_t frame;
+    std::size_t obj_id, obj_idx, obj_num;
+    std::size_t frame;
     std::array<bool, 2> is_last;
 
     Transform tf_curr, tf_prev;
@@ -79,9 +79,10 @@ struct Input {
     constexpr Input(const CInput &c_input) noexcept :
         res(c_input.w, c_input.h),
         pivot(c_input.px, c_input.py),
-        obj_id(static_cast<std::uint32_t>(std::clamp(c_input.obj_id, 0, 15000))),
-        obj_idx(static_cast<std::uint32_t>(c_input.obj_idx)),
-        frame(static_cast<std::uint32_t>(c_input.frame)),
+        obj_id(static_cast<std::size_t>(std::max(c_input.obj_id, 0))),
+        obj_idx(static_cast<std::size_t>(c_input.obj_idx)),
+        obj_num(static_cast<std::size_t>(c_input.obj_num)),
+        frame(static_cast<std::size_t>(c_input.frame)),
         is_last(c_input.obj_idx == c_input.obj_num - 1, c_input.frame == c_input.total_frame - 1),
         tf_curr(std::to_array(c_input.curr)),
         tf_prev(std::to_array(c_input.prev)),
