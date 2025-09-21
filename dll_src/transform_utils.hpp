@@ -76,7 +76,6 @@ public:
     [[nodiscard]] constexpr const float get_rot() const noexcept { return rel_rot; }
     [[nodiscard]] constexpr const float get_scale() const noexcept { return rel_scale; }
     [[nodiscard]] constexpr const Vec2<float> &get_pos() const noexcept { return rel_pos; }
-    [[nodiscard]] constexpr const Vec2<float> &get_center() const noexcept { return center_to; }
     [[nodiscard]] constexpr const bool is_moved() const noexcept { return !flag; }
 
     // Calculate the HTM (Homogeneous Transformation Matrix).
@@ -86,12 +85,12 @@ public:
 
 private:
     float rel_rot, rel_scale;
-    Vec2<float> rel_pos, rel_center, center_to, center_from;
+    Vec2<float> rel_pos, rel_center;
     bool flag;
 };
 
 inline constexpr Vec2<float>
 Delta::calc_drift(float amt, std::uint32_t smp) const noexcept {
     float step_amt = smp > 1u ? amt / static_cast<float>(smp) : amt;
-    return -rel_center * step_amt;
+    return rel_center * step_amt;
 }

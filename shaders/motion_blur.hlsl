@@ -34,11 +34,11 @@ float4 apply_blur(float3 pos, float n) {
 
     for (uint i = 1; i <= uint(n); ++i) {
         pos = mul(htm, pos);
-        col += pick_col(pos.xy + pivot + drift * i);
+        col += pick_col(pos.xy + pivot - drift * i);
         htm._m02_m12_m22 = mul(adj_mat, htm._m02_m12_m22);
     }
 
-    return saturate(col * rcp(n));
+    return saturate(col * rcp(n + 1.0));
 }
 
 float4 motion_blur(PS_INPUT input) : SV_Target {

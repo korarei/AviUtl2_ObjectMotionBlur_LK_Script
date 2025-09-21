@@ -51,7 +51,7 @@ calc_size(Delta &delta, float amt, const Input &input) noexcept {
     std::array<int, 4> margin{};
 
     auto htm = delta.calc_htm(amt);
-    auto c_prev = Vec3<float>(delta.get_center(), 1.0f);
+    auto c_prev = Vec3<float>(-input.pivot + delta.calc_drift(amt), 1.0f);
     auto pos = (htm * c_prev).to_vec2() + input.pivot;
     auto bbox = (htm.to_mat2().abs()) * input.res;
 
