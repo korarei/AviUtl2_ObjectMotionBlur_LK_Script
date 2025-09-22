@@ -56,7 +56,7 @@ pcall(ffi.cdef, [[
         bool resize;
         int geo_cahce;
         int geo_ctrl;
-    } Param;
+    } OMBLKParam;
 
     typedef struct {
         float w, h;
@@ -66,7 +66,7 @@ pcall(ffi.cdef, [[
         float curr[6];
         float prev[6];
         float geo[6];
-    } Input;
+    } OMBLKInput;
 
     typedef struct {
         int margin[4];
@@ -74,17 +74,17 @@ pcall(ffi.cdef, [[
         float drift[2];
         int smp;
         int req_smp;
-    } Output;
+    } OMBLKOutput;
 
-    int process_motion_blur(const Param *param, const Input *input, Output *output);
+    int ObjectMotionBlur_LK(const OMBLKParam *param, const OMBLKInput *input, OMBLKOutput *output);
 ]])
 
 ---@class Param : ffi.cdata*
-local Param = ffi.typeof("Param")
+local Param = ffi.typeof("OMBLKParam")
 ---@class Input : ffi.cdata*
-local Input = ffi.typeof("Input")
+local Input = ffi.typeof("OMBLKInput")
 ---@class Output : ffi.cdata*
-local Output = ffi.typeof("Output")
+local Output = ffi.typeof("OMBLKOutput")
 
 local gv = obj.getvalue
 
@@ -136,7 +136,7 @@ elseif (obj.frame ~= 0) then
 end
 
 local output = Output()
-local state = lib.process_motion_blur(param, input, output)
+local state = lib.ObjectMotionBlur_LK(param, input, output)
 
 if (state == 0) then
     local htm = output.init_htm
