@@ -20,6 +20,10 @@ if (not pcall(obj.getvalue, "cx")) then
     return
 end
 
+if (obj.num == 0) then
+    return
+end
+
 local function tobool(v, d)
     if (type(v) == "boolean") then
         return v
@@ -38,7 +42,7 @@ local ext = tonumber(_0.extrapolation) or s0 s0 = nil
 local resize = tobool(_0.resize, c1 ~= 0) c1 = nil
 local geo_cache = tonumber(_0.geo_cache or s1) s1 = nil
 local geo_ctrl = tonumber(_0.geo_ctrl or s2) s2 = nil
-local obj_id = tonumber(_0.object_id) or t6 t6 = nil -- beta 11a
+local obj_id = math.max(tonumber(_0.object_id) or t6, 0) t6 = nil -- beta 11a
 local mix = math.min(math.max(tonumber(_0.mix) or t5, 0.0), 100.0) * 0.01 t5 = nil
 local print_info = tobool(_0.print_info, c2 ~= 0) c2 = nil
 _0 = nil
@@ -57,8 +61,8 @@ pcall(ffi.cdef, [[
     typedef struct {
         float w, h;
         float px, py;
-        int obj_id, obj_idx, obj_num;
-        int frame, total_frame;
+        size_t obj_id, obj_idx, obj_num;
+        size_t frame, total_frame;
         float curr[6];
         float prev[6];
         float geo[6];
