@@ -89,7 +89,7 @@ cleanup_geo(const Param &param, const Input &input) {
 }
 
 extern "C" int
-process_motion_blur(const CParam *c_param, const CInput *c_input, COutput *c_output) {
+ObjectMotionBlur_LK(const CParam *c_param, const CInput *c_input, COutput *c_output) {
     if (!c_param || !c_input || !c_output)
         return -1;
 
