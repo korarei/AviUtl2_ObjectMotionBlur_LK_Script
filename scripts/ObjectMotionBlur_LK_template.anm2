@@ -15,12 +15,10 @@
 ${SHADER_MOTION_BLUR}
 ]]
 
-if (not pcall(obj.getvalue, "cx")) then
-    debug_print("AviUtl ExEdit2 beta12 or later is required.")
-    return
-end
+local gv = obj.getvalue
 
-if (obj.num == 0) then
+if (not pcall(gv, "cx")) then
+    debug_print("AviUtl ExEdit2 beta12 or later is required.")
     return
 end
 
@@ -85,8 +83,6 @@ local Param = ffi.typeof("OMBLKParam")
 local Input = ffi.typeof("OMBLKInput")
 ---@class Output : ffi.cdata*
 local Output = ffi.typeof("OMBLKOutput")
-
-local gv = obj.getvalue
 
 local dll_path = obj.getinfo("script_path") .. "ObjectMotionBlur_LK.dll"
 local ok, lib = pcall(ffi.load, dll_path)
