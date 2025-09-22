@@ -76,15 +76,15 @@ cleanup_geo(const Param &param, const Input &input) {
         case 1:
             if (input.is_last[1])
                 geo_map.clear(input.obj_id);
-            break;
+            return;
         case 2:
             geo_map.clear();
-            break;
+            return;
         case 3:
             geo_map.clear(input.obj_id);
-            break;
+            return;
         default:
-            break;
+            return;
     }
 }
 

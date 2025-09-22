@@ -22,8 +22,8 @@ struct CParam {
 struct CInput {
     float w, h;
     float px, py;
-    int obj_id, obj_idx, obj_num;
-    int frame, total_frame;
+    size_t obj_id, obj_idx, obj_num;
+    size_t frame, total_frame;
     float curr[6];
     float prev[6];
     float geo[6];
@@ -79,10 +79,10 @@ struct Input {
     constexpr Input(const CInput &c_input) noexcept :
         res(c_input.w, c_input.h),
         pivot(c_input.px, c_input.py),
-        obj_id(static_cast<std::size_t>(std::max(c_input.obj_id, 0))),
-        obj_idx(static_cast<std::size_t>(c_input.obj_idx)),
-        obj_num(static_cast<std::size_t>(c_input.obj_num)),
-        frame(static_cast<std::size_t>(c_input.frame)),
+        obj_id(c_input.obj_id),
+        obj_idx(c_input.obj_idx),
+        obj_num(c_input.obj_num),
+        frame(c_input.frame),
         is_last(c_input.obj_idx == c_input.obj_num - 1, c_input.frame == c_input.total_frame - 1),
         tf_curr(std::to_array(c_input.curr)),
         tf_prev(std::to_array(c_input.prev)),

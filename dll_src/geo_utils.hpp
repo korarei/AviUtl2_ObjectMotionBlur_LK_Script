@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -12,10 +13,10 @@
 template <std::size_t N>
 class GeoMap {
 public:
-    GeoMap() noexcept = default;
-    ~GeoMap() noexcept = default;
+    constexpr GeoMap() noexcept = default;
+    constexpr ~GeoMap() noexcept = default;
 
-    void resize(std::size_t hash, std::size_t idx, std::size_t num, std::uint32_t mode) noexcept {
+    constexpr void resize(std::size_t hash, std::size_t idx, std::size_t num, std::uint32_t mode) noexcept {
         if (mode == 0u) {
             clear(hash);
             return;
@@ -42,7 +43,7 @@ public:
         return;
     }
 
-    void write(std::size_t hash, std::size_t idx, std::size_t pos, const Geo &geo) noexcept {
+    constexpr void write(std::size_t hash, std::size_t idx, std::size_t pos, const Geo &geo) noexcept {
         const auto [id, offset] = calc_block_pos(pos);
 
         auto it_hash = map.find(hash);
@@ -58,7 +59,7 @@ public:
         return;
     }
 
-    [[nodiscard]] Geo *read(std::size_t hash, std::size_t idx, std::size_t pos) noexcept {
+    [[nodiscard]] constexpr const Geo *read(std::size_t hash, std::size_t idx, std::size_t pos) const noexcept {
         const auto [id, offset] = calc_block_pos(pos);
 
         if (auto block = get_block(hash, idx, id); block && (*block)[offset].get_flag())
@@ -67,8 +68,9 @@ public:
             return nullptr;
     }
 
-    void clear() noexcept { MapData{}.swap(map); }
-    void clear(std::size_t hash) noexcept {
+    constexpr void clear() noexcept { MapData{}.swap(map); }
+
+    constexpr void clear(std::size_t hash) noexcept {
         auto it_hash = map.find(hash);
         if (it_hash == map.end())
             return;
@@ -80,13 +82,16 @@ public:
     }
 
 private:
-    using BlockMap = std::map<std::size_t, std::array<Geo, N>>;
+    using Block = std::array<Geo, N>;
+    using BlockMap = std::map<std::size_t, Block>;
     using MapData = std::unordered_map<std::size_t, std::vector<BlockMap>>;
     MapData map{};
 
-    std::array<std::size_t, 2> calc_block_pos(std::size_t v) const { return {v / N, v % N}; }
+    [[nodiscard]] constexpr std::array<std::size_t, 2> calc_block_pos(std::size_t v) const noexcept {
+        return {v / N, v % N};
+    }
 
-    std::array<Geo, N> *get_block(std::size_t hash, std::size_t idx, std::size_t id) {
+    [[nodiscard]] constexpr const Block *get_block(std::size_t hash, std::size_t idx, std::size_t id) const noexcept {
         auto it_hash = map.find(hash);
         if (it_hash == map.end())
             return nullptr;
