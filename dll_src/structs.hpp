@@ -53,16 +53,9 @@ struct Param {
     bool resize;
     std::uint32_t geo_cache;
     std::uint32_t geo_ctrl;
+    float mix;
+    bool print_info;
     bool is_valid;
-
-    constexpr Param(const CParam &c_param) noexcept :
-        shutter_angle(std::clamp(c_param.shutter_angle, 0.0f, 360.0f)),
-        smp_lim(static_cast<std::uint32_t>(std::max(c_param.smp_lim, 1))),
-        ext(static_cast<std::uint32_t>(std::clamp(c_param.ext, 0, 2))),
-        resize(c_param.resize),
-        geo_cache(static_cast<std::uint32_t>(std::clamp(c_param.geo_cache, 0, 2))),
-        geo_ctrl(static_cast<std::uint32_t>(std::clamp(c_param.geo_ctrl, 0, 3))),
-        is_valid(shutter_angle > 1.0e-4 && smp_lim > 1u) {}
 };
 
 struct Input {
@@ -75,16 +68,4 @@ struct Input {
 
     Transform tf_curr, tf_prev;
     Geo geo_curr;
-
-    constexpr Input(const CInput &c_input) noexcept :
-        res(c_input.w, c_input.h),
-        pivot(c_input.px, c_input.py),
-        obj_id(c_input.obj_id),
-        obj_idx(c_input.obj_idx),
-        obj_num(c_input.obj_num),
-        frame(c_input.frame),
-        is_last(c_input.obj_idx == c_input.obj_num - 1, c_input.frame == c_input.total_frame - 1),
-        tf_curr(std::to_array(c_input.curr)),
-        tf_prev(std::to_array(c_input.prev)),
-        geo_curr(true, frame, std::to_array(c_input.geo)) {}
 };

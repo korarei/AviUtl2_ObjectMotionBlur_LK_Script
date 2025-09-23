@@ -1,16 +1,47 @@
 cmake_minimum_required(VERSION 3.20.0)
 project(ObjectMotionBlur_LK VERSION 0.2.1 LANGUAGES CXX)
 
+# Path Settings.
+set(LUA_DIR "${CMAKE_SOURCE_DIR}/../.lua")
+set(LUAJIT_DEF "${CMAKE_SOURCE_DIR}/luajit/luajit.def")
+set(LUAJIT_LIB "${CMAKE_CURRENT_BINARY_DIR}/luajit/luajit.lib")
+
+# Generate the luajit.lib
+if(MSVC)
+    add_custom_command(
+        OUTPUT ${LUAJIT_LIB}
+        COMMAND lib /DEF:${LUAJIT_DEF} /OUT:${LUAJIT_LIB} /MACHINE:X64
+        DEPENDS ${LUAJIT_DEF}
+        VERBATIM
+    )
+
+    add_custom_target(gen_luajit_lib DEPENDS ${LUAJIT_LIB})
+endif()
+
+# Importing Lua Libraries.
+add_library(luajit SHARED IMPORTED)
+set_target_properties(luajit PROPERTIES
+    IMPORTED_IMPLIB "${LUAJIT_LIB}"
+    INTERFACE_INCLUDE_DIRECTORIES "${LUA_DIR}/include"
+)
+
 # Main target definition.
 add_library(${PROJECT_NAME} SHARED
     main.cpp
     transform_utils.cpp
+    lua_func.cpp
 )
 
 # Def file specification.
 set_target_properties(${PROJECT_NAME} PROPERTIES
     LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/main.def"
     PREFIX ""
+)
+
+# Library Link.
+add_dependencies(${PROJECT_NAME} gen_luajit_lib)
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    luajit
 )
 
 # C++ version specification.
@@ -43,26 +74,5 @@ if (MSVC)
     # Runtime library switching.
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-    )
-# Functionality has not been confirmed.
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(${PROJECT_NAME} PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-
-        # Release-only
-        $<$<CONFIG:Release>:-O3>
-        $<$<CONFIG:Release>:-ffunction-sections>
-        $<$<CONFIG:Release>:-fdata-sections>
-
-        # Debug-only
-        $<$<CONFIG:Debug>:-O0>
-        $<$<CONFIG:Debug>:-g>
-    )
-
-    target_link_options(${PROJECT_NAME} PRIVATE
-        $<$<CONFIG:Release>:-Wl,--gc-sections>
-        $<$<CONFIG:Debug>:-g>
     )
 endif()

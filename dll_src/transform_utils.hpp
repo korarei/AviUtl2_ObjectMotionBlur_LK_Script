@@ -53,6 +53,9 @@ public:
     constexpr Transform() noexcept : data{} {}
     constexpr Transform(const std::array<float, 6> &tf) noexcept : data(tf) {}
 
+    [[nodiscard]] constexpr float &operator[](std::size_t i) noexcept { return data[i]; }
+    [[nodiscard]] constexpr const float &operator[](std::size_t i) const noexcept { return data[i]; }
+
     [[nodiscard]] constexpr Vec2<float> get_center() const noexcept { return Vec2<float>(data[0], data[1]); }
     [[nodiscard]] constexpr Vec2<float> get_pos() const noexcept { return Vec2<float>(data[2], data[3]); }
     [[nodiscard]] constexpr float get_rot() const noexcept { return to_rad(data[4]); }

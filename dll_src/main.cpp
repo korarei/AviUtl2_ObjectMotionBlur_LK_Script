@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <sstream>
 
 #include "geo_utils.hpp"
+#include "lua_func.hpp"
 #include "structs.hpp"
 
 static auto geo_map = GeoMap<8>();
@@ -93,16 +95,14 @@ cleanup_geo(const Param &param, const Input &input) {
     }
 }
 
-extern "C" int
-ObjectMotionBlur_LK(const CParam *c_param, const CInput *c_input, COutput *c_output) {
-    if (!c_param || !c_input || !c_output)
-        return -1;
-
-    const auto param = Param(*c_param);
-    auto input = Input(*c_input);
+int
+process_motion_blur(lua_State *L) {
+    Obj obj(L);
+    const auto param = obj.get_param();
+    auto input = obj.get_input(param.ext);
 
     if (input.obj_idx >= input.obj_num)
-        return -1;
+        return 0;
 
     bool flag = param.is_valid && (param.ext || input.frame);
 
@@ -115,6 +115,7 @@ ObjectMotionBlur_LK(const CParam *c_param, const CInput *c_input, COutput *c_out
         const float amt = param.shutter_angle / 360.0f;
 
         std::array<int, 4> margin{};
+        Vec2<int> res_ex(0, 0);
         std::uint32_t req_smp = 0u;
         std::uint32_t smp = 0u;
 
@@ -125,7 +126,8 @@ ObjectMotionBlur_LK(const CParam *c_param, const CInput *c_input, COutput *c_out
 
         if (delta.is_moved()) {
             margin = calc_size(delta, amt, input);
-            req_smp = static_cast<std::uint32_t>(Vec2<int>(margin[2] + margin[3], margin[0] + margin[1]).norm(2));
+            res_ex = Vec2<int>(margin[2] + margin[3], margin[0] + margin[1]);
+            req_smp = static_cast<std::uint32_t>(res_ex.norm(2));
             smp = std::min(req_smp, param.smp_lim - 1u);
         }
 
@@ -133,13 +135,29 @@ ObjectMotionBlur_LK(const CParam *c_param, const CInput *c_input, COutput *c_out
             auto init_htm = delta.calc_htm(amt, smp, true);
             auto drift = delta.calc_drift(amt, smp);
 
-            *c_output = COutput(margin, init_htm, drift, smp, req_smp);
-        } else {
-            flag = false;
-            *c_output = COutput();
+            Vec2<float> res_new = input.res;
+            Vec2<float> pivot_new = input.pivot;
+            if (param.resize) {
+                pivot_new = input.tf_curr.get_center() + obj.resize(margin);
+                res_new += static_cast<Vec2<float>>(res_ex);
+            }
+
+            Vec2<float> pivot = res_new * 0.5f + pivot_new;
+            std::vector<float> constants;
+            constants.reserve(20);
+
+            for (std::size_t n = 0; n < 3; ++n) {
+                for (std::size_t m = 0; m < 3; ++m) {
+                    constants.emplace_back(init_htm(n, m));
+                }
+                constants.emplace_back(0.0f);
+            }
+
+            constants.insert(constants.end(), {drift[0], drift[1], res_new[0], res_new[1], pivot[0], pivot[1],
+                                               static_cast<float>(smp), param.mix});
+
+            obj.pixel_shader(constants);
         }
-    } else {
-        *c_output = COutput();
     }
 
     if (param.geo_cache == 2u) {
@@ -147,7 +165,20 @@ ObjectMotionBlur_LK(const CParam *c_param, const CInput *c_input, COutput *c_out
             geo_map.write(input.obj_id, input.obj_idx, 7, input.geo_curr);
     }
 
-    cleanup_geo(param, input);
+    if (geo_map.read(input.obj_id, input.obj_idx, 1)) {
+        obj.print("保存OK");
+    } else {
+        obj.print("保存NG");
+    }
 
-    return !flag;
+    cleanup_geo(param, input);
+    return 0;
+}
+
+static luaL_Reg functions[] = {{"process_motion_blur", process_motion_blur}, {nullptr, nullptr}};
+
+extern "C" int
+luaopen_ObjectMotionBlur_LK(lua_State *L) {
+    luaL_register(L, "ObjectMotionBlur_LK", functions);
+    return 1;
 }
