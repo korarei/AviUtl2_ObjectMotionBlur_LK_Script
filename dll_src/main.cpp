@@ -50,19 +50,24 @@ static std::array<int, 4>
 calc_size(Delta &delta, float amt, const Input &input) noexcept {
     std::array<int, 4> margin{};
 
-    auto htm = delta.calc_htm(amt);
-    auto c_prev = Vec3<float>(-input.pivot + delta.calc_drift(amt), 1.0f);
-    auto pos = (htm * c_prev).to_vec2() + input.pivot;
-    auto bbox = (htm.to_mat2().abs()) * input.res;
+    const float h_amt = amt * 0.5f;
+    std::array<Mat3<float>, 2> htm_data{delta.calc_htm(h_amt), delta.calc_htm(amt)};
+    std::array<Vec2<float>, 2> drift_data{delta.calc_drift(h_amt), delta.calc_drift(amt)};
 
-    auto diff = (bbox - input.res) * 0.5f;
-    auto upper_left = static_cast<Vec2<int>>((diff - pos).ceil());
-    auto lower_right = static_cast<Vec2<int>>((diff + pos).ceil());
+    for (std::size_t i = 0; i < 2; ++i) {
+        auto c_prev = Vec3<float>(-input.pivot + drift_data[i], 1.0f);
+        auto pos = (htm_data[i] * c_prev).to_vec2() + input.pivot;
+        auto bbox = (htm_data[i].to_mat2().abs()) * input.res;
 
-    margin[0] = std::max(upper_left.get_y(), 0);
-    margin[1] = std::max(lower_right.get_y(), 0);
-    margin[2] = std::max(upper_left.get_x(), 0);
-    margin[3] = std::max(lower_right.get_x(), 0);
+        auto diff = (bbox - input.res) * 0.5f;
+        auto ul = static_cast<Vec2<int>>((diff - pos).ceil());
+        auto br = static_cast<Vec2<int>>((diff + pos).ceil());
+
+        margin[0] = std::max(ul.get_y(), margin[0]);
+        margin[1] = std::max(br.get_y(), margin[1]);
+        margin[2] = std::max(ul.get_x(), margin[2]);
+        margin[3] = std::max(br.get_x(), margin[3]);
+    }
 
     return margin;
 }
@@ -95,6 +100,9 @@ ObjectMotionBlur_LK(const CParam *c_param, const CInput *c_input, COutput *c_out
 
     const auto param = Param(*c_param);
     auto input = Input(*c_input);
+
+    if (input.obj_idx >= input.obj_num)
+        return -1;
 
     bool flag = param.is_valid && (param.ext || input.frame);
 
