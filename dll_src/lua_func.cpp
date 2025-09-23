@@ -21,17 +21,11 @@ Obj::get_saving() {
 }
 
 float
-Obj::get_val(const char *target, std::optional<double> time) {
+Obj::get_val(const char *target, double time) {
     lua_getfield(L, -1, "getvalue");
     lua_pushstring(L, target);
-
-    if (time) {
-        lua_pushnumber(L, *time);
-        lua_call(L, 2, 1);
-    } else {
-        lua_call(L, 1, 1);
-    }
-
+    lua_pushnumber(L, time);
+    lua_call(L, 2, 1);
     float v = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
     return v;
@@ -39,7 +33,8 @@ Obj::get_val(const char *target, std::optional<double> time) {
 
 Param
 Obj::get_param() {
-    name = get_string(1, "motion_blur");
+    constexpr float e = 1.0e-4f;
+
     float shutter_angle = static_cast<float>(std::clamp(get_number(2, 180), 0.0, 360.0));
     std::uint32_t render_smp_lim = static_cast<std::uint32_t>(std::max(get_integer(3, 256ll), 1ll));
     std::uint32_t preview_smp_lim = static_cast<std::uint32_t>(std::max(get_integer(4, 0ll), 0ll));
@@ -47,13 +42,13 @@ Obj::get_param() {
     bool resize = get_boolean(6, true);
     std::uint32_t geo_cache = static_cast<std::uint32_t>(std::clamp(get_integer(7, 0ll), 0ll, 2ll));
     std::uint32_t geo_ctrl = static_cast<std::uint32_t>(std::clamp(get_integer(8, 0ll), 0ll, 3ll));
-    float mix = static_cast<float>(std::clamp(get_number(9, 0.0), 0.0, 1.0));
+    float mix = static_cast<float>(std::clamp(get_number(9, 0.0) * 0.01, 0.0, 1.0));
     bool print_info = get_boolean(10, false);
 
     std::uint32_t smp_lim = (!preview_smp_lim || get_saving()) ? render_smp_lim : preview_smp_lim;
-    bool is_valid = shutter_angle > 1.0e-4 && smp_lim > 1u;
+    bool is_valid = shutter_angle > e && smp_lim > 1u;
 
-    return Param(shutter_angle, smp_lim, ext, resize, geo_cache, geo_ctrl, mix, print_info, is_valid);
+    return Param{get_string(1, "motion_blur"), shutter_angle, smp_lim, ext, resize, geo_cache, geo_ctrl, mix, print_info, is_valid};
 }
 
 Input
@@ -67,7 +62,7 @@ Obj::get_input(std::uint32_t ext) {
     input.res = Vec2<float>(static_cast<float>(lua_tonumber(L, -2)), static_cast<float>(lua_tonumber(L, -1)));
     lua_pop(L, 2);
 
-    input.obj_id = static_cast<std::size_t>(std::max(get_integer(11, 0ll), 0ll));
+    input.obj_id = static_cast<std::size_t>(get_integer(11, 0ll));
     lua_getfield(L, -1, "index");
     lua_getfield(L, -2, "num");
     input.obj_idx = static_cast<std::size_t>(lua_tointeger(L, -2));
@@ -79,14 +74,17 @@ Obj::get_input(std::uint32_t ext) {
     lua_getfield(L, -3, "framerate");
     input.frame = static_cast<std::size_t>(lua_tointeger(L, -3));
     std::size_t total_frame = static_cast<std::size_t>(lua_tointeger(L, -2));
-    double framerate = lua_tonumber(L, -1);
+    double fps = lua_tonumber(L, -1);
     lua_pop(L, 3);
 
     input.is_last = {input.obj_idx == input.obj_num - 1, input.frame == total_frame - 1};
 
-    double dt = 1.0 / framerate;
+    double dt = 1.0 / fps;
     constexpr std::array<const char *, 6> geo_targets{"cx", "cy", "ox", "oy", "rz", "zoom"};
     constexpr std::array<const char *, 6> tf_targets{"cx", "cy", "x", "y", "rz", "zoom"};
+
+    input.geo_curr.set_flag(true);
+    input.geo_curr.set_frame(input.frame);
 
     for (std::size_t i = 0; i < 6; ++i) {
         lua_getfield(L, -1, geo_targets[i]);
@@ -117,6 +115,7 @@ Obj::get_input(std::uint32_t ext) {
                 }
             } break;
             default:
+                input.tf_prev = input.tf_curr;
                 break;
         }
     } else if (input.frame) {
@@ -133,39 +132,31 @@ Obj::get_input(std::uint32_t ext) {
     return input;
 }
 
-Vec2<float>
-Obj::resize(const std::array<int, 4> &margin) {
+void
+Obj::resize(const std::array<Vec2<float>, 2> &margin, const Vec2<float> &center) {
     lua_rawgeti(L, LUA_REGISTRYINDEX, obj_ref);
     lua_getfield(L, -1, "effect");
     lua_pushstring(L, "領域拡張");
     lua_pushstring(L, "上");
-    lua_pushinteger(L, margin[0]);
+    lua_pushinteger(L, static_cast<lua_Integer>(margin[0].get_y()));
     lua_pushstring(L, "下");
-    lua_pushinteger(L, margin[1]);
+    lua_pushinteger(L, static_cast<lua_Integer>(margin[1].get_y()));
     lua_pushstring(L, "左");
-    lua_pushinteger(L, margin[2]);
+    lua_pushinteger(L, static_cast<lua_Integer>(margin[0].get_x()));
     lua_pushstring(L, "右");
-    lua_pushinteger(L, margin[3]);
+    lua_pushinteger(L, static_cast<lua_Integer>(margin[1].get_x()));
     lua_call(L, 9, 0);
 
-    lua_getfield(L, -1, "cx");
-    lua_getfield(L, -2, "cy");
-    double cx = lua_tonumber(L, -2);
-    double cy = lua_tonumber(L, -1);
-    lua_pop(L, 2);
-    cx += (margin[2] - margin[3]) * 0.5;
-    cy += (margin[0] - margin[1]) * 0.5;
-    lua_pushnumber(L, cx);
+    lua_pushnumber(L, center.get_x());
     lua_setfield(L, -2, "cx");
-    lua_pushnumber(L, cy);
+    lua_pushnumber(L, center.get_y());
     lua_setfield(L, -2, "cy");
 
     lua_pop(L, 1);
-    return Vec2<float>(static_cast<float>(cx), static_cast<float>(cy));
 }
 
 void
-Obj::pixel_shader(const std::vector<float> &constants) {
+Obj::pixel_shader(const std::string &name, const std::vector<float> &constants) {
     lua_rawgeti(L, LUA_REGISTRYINDEX, obj_ref);
     lua_getfield(L, -1, "pixelshader");
     lua_pushstring(L, name.c_str());
@@ -179,5 +170,13 @@ Obj::pixel_shader(const std::vector<float> &constants) {
     }
 
     lua_call(L, 4, 0);
+    lua_pop(L, 1);
+}
+
+void
+Obj::print(const std::string &str) {
+    lua_getglobal(L, "debug_print");
+    lua_pushstring(L, str.c_str());
+    lua_call(L, 1, 0);
     lua_pop(L, 1);
 }

@@ -1,4 +1,4 @@
-LIBRARY LuaJIT
+LIBRARY "LuaJIT"
 EXPORTS
     __swprintf_l
     __vswprintf_l

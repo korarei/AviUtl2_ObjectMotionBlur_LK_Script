@@ -1,7 +1,10 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <sstream>
+#include <format>
+#include <string>
+
+#include <lua.hpp>
 
 #include "geo_utils.hpp"
 #include "lua_func.hpp"
@@ -48,9 +51,9 @@ calc_delta(const Param &param, Input &input, std::size_t pos) noexcept {
     return Delta(input.tf_curr, input.tf_prev);
 }
 
-static std::array<int, 4>
+static std::array<Vec2<float>, 2>
 calc_size(Delta &delta, float amt, const Input &input) noexcept {
-    std::array<int, 4> margin{};
+    std::array<Vec2<float>, 2> margin{};
 
     const float h_amt = amt * 0.5f;
     std::array<Mat3<float>, 2> htm_data{delta.calc_htm(h_amt), delta.calc_htm(amt)};
@@ -62,13 +65,8 @@ calc_size(Delta &delta, float amt, const Input &input) noexcept {
         auto bbox = (htm_data[i].to_mat2().abs()) * input.res;
 
         auto diff = (bbox - input.res) * 0.5f;
-        auto ul = static_cast<Vec2<int>>((diff - pos).ceil());
-        auto br = static_cast<Vec2<int>>((diff + pos).ceil());
-
-        margin[0] = std::max(ul.get_y(), margin[0]);
-        margin[1] = std::max(br.get_y(), margin[1]);
-        margin[2] = std::max(ul.get_x(), margin[2]);
-        margin[3] = std::max(br.get_x(), margin[3]);
+        margin[0] = margin[0].max((diff - pos).ceil());
+        margin[1] = margin[1].max((diff + pos).ceil());
     }
 
     return margin;
@@ -105,6 +103,7 @@ process_motion_blur(lua_State *L) {
         return 0;
 
     bool flag = param.is_valid && (param.ext || input.frame);
+    std::uint32_t req_smp = 0u;
 
     geo_map.resize(input.obj_id, input.obj_idx, input.obj_num, param.geo_cache);
 
@@ -114,9 +113,8 @@ process_motion_blur(lua_State *L) {
     if (flag) {
         const float amt = param.shutter_angle / 360.0f;
 
-        std::array<int, 4> margin{};
-        Vec2<int> res_ex(0, 0);
-        std::uint32_t req_smp = 0u;
+        std::array<Vec2<float>, 2> margin{};
+        Vec2<float> delta_res{};
         std::uint32_t smp = 0u;
 
         if (param.geo_cache && !input.frame)
@@ -126,8 +124,8 @@ process_motion_blur(lua_State *L) {
 
         if (delta.is_moved()) {
             margin = calc_size(delta, amt, input);
-            res_ex = Vec2<int>(margin[2] + margin[3], margin[0] + margin[1]);
-            req_smp = static_cast<std::uint32_t>(res_ex.norm(2));
+            delta_res = margin[0] + margin[1];
+            req_smp = static_cast<std::uint32_t>(delta_res.norm(2));
             smp = std::min(req_smp, param.smp_lim - 1u);
         }
 
@@ -138,25 +136,21 @@ process_motion_blur(lua_State *L) {
             Vec2<float> res_new = input.res;
             Vec2<float> pivot_new = input.pivot;
             if (param.resize) {
-                pivot_new = input.tf_curr.get_center() + obj.resize(margin);
-                res_new += static_cast<Vec2<float>>(res_ex);
+                auto c_new = input.geo_curr.get_center() + (margin[0] - margin[1]) * 0.5f;
+                obj.resize(margin, c_new);
+                pivot_new = input.tf_curr.get_center() + c_new;
+                res_new += delta_res;
             }
 
-            Vec2<float> pivot = res_new * 0.5f + pivot_new;
-            std::vector<float> constants;
-            constants.reserve(20);
+            Vec2<float> ps_pivot = res_new * 0.5f + pivot_new;
+            std::vector<float> constants = {
+                    init_htm(0, 0),   init_htm(0, 1),   init_htm(0, 2),          0.0f,
+                    init_htm(1, 0),   init_htm(1, 1),   init_htm(1, 2),          0.0f,
+                    init_htm(2, 0),   init_htm(2, 1),   init_htm(2, 2),          0.0f,
+                    drift.get_x(),    drift.get_y(),    res_new.get_x(),         res_new.get_y(),
+                    ps_pivot.get_x(), ps_pivot.get_y(), static_cast<float>(smp), param.mix};
 
-            for (std::size_t n = 0; n < 3; ++n) {
-                for (std::size_t m = 0; m < 3; ++m) {
-                    constants.emplace_back(init_htm(n, m));
-                }
-                constants.emplace_back(0.0f);
-            }
-
-            constants.insert(constants.end(), {drift[0], drift[1], res_new[0], res_new[1], pivot[0], pivot[1],
-                                               static_cast<float>(smp), param.mix});
-
-            obj.pixel_shader(constants);
+            obj.pixel_shader(param.shader_name, constants);
         }
     }
 
@@ -165,13 +159,17 @@ process_motion_blur(lua_State *L) {
             geo_map.write(input.obj_id, input.obj_idx, 7, input.geo_curr);
     }
 
-    if (geo_map.read(input.obj_id, input.obj_idx, 1)) {
-        obj.print("保存OK");
-    } else {
-        obj.print("保存NG");
-    }
-
     cleanup_geo(param, input);
+
+    if (param.print_info) {
+        std::string info = std::format(
+                "[INFO]\n"
+                "Object ID       : {}\n"
+                "Index           : {}\n"
+                "Required Samples: {}",
+                input.obj_id, input.obj_idx, req_smp);
+        obj.print(info);
+    }
     return 0;
 }
 

@@ -3,7 +3,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -24,28 +23,22 @@ public:
 
     [[nodiscard]] bool get_saving();
 
-    [[nodiscard]] Vec2<float> resize(const std::array<int, 4> &margin);
+    [[nodiscard]] void resize(const std::array<Vec2<float>, 2> &margin, const Vec2<float> &center);
 
-    void pixel_shader(const std::vector<float> &constants);
+    void pixel_shader(const std::string &name, const std::vector<float> &constants);
 
-    void print(const std::string &str) {
-        lua_getglobal(L, "debug_print");
-        lua_pushstring(L, str.c_str());
-        lua_call(L, 1, 0);
-        lua_pop(L, 1);
-    }
+    void print(const std::string &str);
 
 private:
     lua_State *L;
     int obj_ref;
-    std::string name = "";
 
     [[nodiscard]] const char *get_string(int idx, const char *d);
     [[nodiscard]] lua_Number get_number(int idx, lua_Number d);
     [[nodiscard]] lua_Integer get_integer(int idx, lua_Integer d);
     [[nodiscard]] bool get_boolean(int idx, bool d);
 
-    [[nodiscard]] float get_val(const char *target, std::optional<double> time);
+    [[nodiscard]] float get_val(const char *target, double time);
 };
 
 inline const char *
