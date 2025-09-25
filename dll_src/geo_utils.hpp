@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
-#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -16,7 +15,7 @@ public:
     constexpr GeoMap() noexcept = default;
     constexpr ~GeoMap() noexcept = default;
 
-    constexpr void resize(std::size_t hash, std::size_t idx, std::size_t num, std::uint32_t mode) noexcept {
+    constexpr void resize(std::size_t hash, std::size_t idx, std::size_t num, std::uint32_t mode) {
         if (mode == 0u) {
             clear(hash);
             return;
@@ -32,7 +31,7 @@ public:
             list.resize(num);
         }
 
-        auto &block_map = list[idx];
+        auto &block_map = list.at(idx);
 
         if (mode == 1u || block_map.size() == 1)
             return;
