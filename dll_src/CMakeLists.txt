@@ -22,7 +22,7 @@ endif()
 add_library(luajit SHARED IMPORTED)
 set_target_properties(luajit PROPERTIES
     IMPORTED_IMPLIB "${LUAJIT_LIB}"
-    INTERFACE_INCLUDE_DIRECTORIES "${LUA_DIR}/include"
+    INTERFACE_INCLUDE_DIRECTORIES "${LUA_DIR}/include/luajit-2.1"
 )
 
 # Main target definition.
