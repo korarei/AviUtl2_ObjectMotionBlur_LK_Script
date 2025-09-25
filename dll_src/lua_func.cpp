@@ -88,16 +88,11 @@ Obj::get_input(std::uint32_t ext) {
                 for (std::size_t i = 0; i < 6; ++i) {
                     lua_getfield(L, -1, "getvalue");
                     lua_pushstring(L, tracks[i]);
-                    lua_pushnumber(L, 0.0);
-                    lua_call(L, 2, 1);
-                    lua_getfield(L, -2, "getvalue");
-                    lua_pushstring(L, tracks[i]);
                     lua_pushnumber(L, dt);
                     lua_call(L, 2, 1);
-                    const double v0 = lua_tonumber(L, -2);
                     const double v1 = lua_tonumber(L, -1);
-                    input.tf_prev[i] = static_cast<float>(v0 * 2.0 - v1);
-                    lua_pop(L, 2);
+                    input.tf_prev[i] = static_cast<float>(input.tf_curr[i] * 2.0 - v1);
+                    lua_pop(L, 1);
                 }
                 break;
             case 2: {
@@ -105,21 +100,16 @@ Obj::get_input(std::uint32_t ext) {
                 for (std::size_t i = 0; i < 6; ++i) {
                     lua_getfield(L, -1, "getvalue");
                     lua_pushstring(L, tracks[i]);
-                    lua_pushnumber(L, 0.0);
+                    lua_pushnumber(L, dt);
                     lua_call(L, 2, 1);
                     lua_getfield(L, -2, "getvalue");
                     lua_pushstring(L, tracks[i]);
-                    lua_pushnumber(L, dt);
-                    lua_call(L, 2, 1);
-                    lua_getfield(L, -3, "getvalue");
-                    lua_pushstring(L, tracks[i]);
                     lua_pushnumber(L, dt2);
                     lua_call(L, 2, 1);
-                    const double v0 = lua_tonumber(L, -3);
                     const double v1 = lua_tonumber(L, -2);
                     const double v2 = lua_tonumber(L, -1);
-                    input.tf_prev[i] = static_cast<float>(v0 * 3.0 - v1 * 3.0 + v2);
-                    lua_pop(L, 3);
+                    input.tf_prev[i] = static_cast<float>(input.tf_curr[i] * 3.0 - v1 * 3.0 + v2);
+                    lua_pop(L, 2);
                 }
             } break;
             default:

@@ -21,19 +21,19 @@ public:
     [[nodiscard]] constexpr float &operator[](std::size_t i) noexcept { return data[i]; }
     [[nodiscard]] constexpr const float &operator[](std::size_t i) const noexcept { return data[i]; }
 
-    [[nodiscard]] constexpr Geo operator+(const Geo &other) noexcept {
+    [[nodiscard]] constexpr Geo operator+(const Geo &other) const noexcept {
         Geo result = *this;
         for (std::size_t i = 0; i < 6; ++i) result[i] += other[i];
         return result;
     }
 
-    [[nodiscard]] constexpr Geo operator-(const Geo &other) noexcept {
+    [[nodiscard]] constexpr Geo operator-(const Geo &other) const noexcept {
         Geo result = *this;
         for (std::size_t i = 0; i < 6; ++i) result[i] -= other[i];
         return result;
     }
 
-    [[nodiscard]] constexpr Geo operator*(const float &scalar) noexcept {
+    [[nodiscard]] constexpr Geo operator*(const float &scalar) const noexcept {
         Geo result = *this;
         for (std::size_t i = 0; i < 6; ++i) result[i] *= scalar;
         return result;

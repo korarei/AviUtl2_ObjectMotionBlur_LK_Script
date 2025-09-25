@@ -15,10 +15,10 @@ static auto geo_map = GeoMap<8>();
 static void
 set_init_geo(std::uint32_t ext, const Input input) noexcept {
     int flag = 1;
-    std::array<Geo, 3> geos{};
+    std::array<Geo, 2> geos{};
 
-    for (std::size_t i = 0; i <= ext; ++i) {
-        if (auto g = geo_map.read(input.obj_id, input.obj_idx, i + 1))
+    for (std::size_t i = 0; i < ext; ++i) {
+        if (auto g = geo_map.read(input.obj_id, input.obj_idx, i + 2))
             geos[i] = *g;
         else
             flag = 0;
@@ -29,10 +29,10 @@ set_init_geo(std::uint32_t ext, const Input input) noexcept {
 
     switch (ext) {
         case 1u:
-            geo_map.overwrite(input.obj_id, input.obj_idx, 0, geos[0] * 2.0f - geos[1]);
+            geo_map.overwrite(input.obj_id, input.obj_idx, 0, input.geo_curr * 2.0f - geos[0]);
             return;
         case 2u:
-            geo_map.overwrite(input.obj_id, input.obj_idx, 0, geos[0] * 3.0f - geos[1] * 3.0f + geos[2]);
+            geo_map.overwrite(input.obj_id, input.obj_idx, 0, input.geo_curr * 3.0f - geos[0] * 3.0f + geos[1]);
             return;
         default:
             return;
@@ -95,6 +95,8 @@ cleanup_geo(const Param &param, const Input &input) {
 
 int
 process_motion_blur(lua_State *L) {
+    constexpr std::size_t prev_pos = 7;
+
     Obj obj(L);
     const auto param = obj.get_param();
     auto input = obj.get_input(param.ext);
@@ -103,11 +105,13 @@ process_motion_blur(lua_State *L) {
         return 0;
 
     const bool on = param.is_valid && (param.ext || input.frame);
+    const bool save_ed = param.geo_cache == 2u;
+    const bool save_st = param.geo_cache == 1u || (save_ed && (input.frame - 1) < param.ext);
     std::uint32_t req_smp = 0u;
 
     geo_map.resize(input.obj_id, input.obj_idx, input.obj_num, param.geo_cache);
 
-    if (param.geo_cache == 1u || (param.geo_cache == 2u && param.ext && input.frame <= param.ext))
+    if (save_st)
         geo_map.overwrite(input.obj_id, input.obj_idx, input.frame + 1, input.geo_curr);
 
     if (on) {
@@ -120,7 +124,7 @@ process_motion_blur(lua_State *L) {
         if (param.geo_cache && !input.frame)
             set_init_geo(param.ext, input);
 
-        auto delta = calc_delta(param, input, (param.geo_cache == 2u && input.frame) ? 7 : input.frame);
+        auto delta = calc_delta(param, input, (save_ed && input.frame) ? prev_pos : input.frame);
 
         if (delta.is_moved()) {
             margin = calc_size(delta, amt, input);
@@ -154,8 +158,8 @@ process_motion_blur(lua_State *L) {
         }
     }
 
-    if (param.geo_cache == 2u)
-        geo_map.write(input.obj_id, input.obj_idx, 7, input.geo_curr);
+    if (save_ed)
+        geo_map.write(input.obj_id, input.obj_idx, prev_pos, input.geo_curr);
 
     cleanup_geo(param, input);
 

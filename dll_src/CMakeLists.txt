@@ -27,6 +27,7 @@ set_target_properties(luajit PROPERTIES
 
 # Main target definition.
 add_library(${PROJECT_NAME} SHARED
+    main.def
     main.cpp
     transform_utils.cpp
     lua_func.cpp
@@ -34,7 +35,6 @@ add_library(${PROJECT_NAME} SHARED
 
 # Def file specification.
 set_target_properties(${PROJECT_NAME} PROPERTIES
-    LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/main.def"
     PREFIX ""
 )
 
