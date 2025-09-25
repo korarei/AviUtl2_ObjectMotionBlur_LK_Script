@@ -40,6 +40,9 @@ Obj::get_param() {
 
 Input
 Obj::get_input(std::uint32_t ext) {
+    constexpr std::array<const char *, 6> fields{"cx", "cy", "ox", "oy", "rz", "zoom"};
+    constexpr std::array<const char *, 6> tracks{"cx", "cy", "x", "y", "rz", "zoom"};
+
     Input input{};
 
     lua_rawgeti(L, LUA_REGISTRYINDEX, obj_ref);
@@ -61,22 +64,19 @@ Obj::get_input(std::uint32_t ext) {
     lua_getfield(L, -3, "framerate");
     input.frame = static_cast<std::size_t>(lua_tointeger(L, -3));
     std::size_t total_frame = static_cast<std::size_t>(lua_tointeger(L, -2));
-    double fps = lua_tonumber(L, -1);
+    const double fps = lua_tonumber(L, -1);
     lua_pop(L, 3);
 
     input.is_last = {input.obj_idx == input.obj_num - 1, input.frame == total_frame - 1};
 
-    double dt = 1.0 / fps;
-    constexpr std::array<const char *, 6> geo_targets{"cx", "cy", "ox", "oy", "rz", "zoom"};
-    constexpr std::array<const char *, 6> tf_targets{"cx", "cy", "x", "y", "rz", "zoom"};
-
+    const double dt = 1.0 / fps;
     input.geo_curr.set_flag(true);
     input.geo_curr.set_frame(input.frame);
 
     for (std::size_t i = 0; i < 6; ++i) {
-        lua_getfield(L, -1, geo_targets[i]);
+        lua_getfield(L, -1, fields[i]);
         lua_getfield(L, -2, "getvalue");
-        lua_pushstring(L, tf_targets[i]);
+        lua_pushstring(L, tracks[i]);
         lua_call(L, 1, 1);
         input.geo_curr[i] = static_cast<float>(lua_tonumber(L, -2));
         input.tf_curr[i] = static_cast<float>(lua_tonumber(L, -1));
@@ -87,18 +87,40 @@ Obj::get_input(std::uint32_t ext) {
         switch (ext) {
             case 1:
                 for (std::size_t i = 0; i < 6; ++i) {
-                    const float v0 = get_val(tf_targets[i], 0);
-                    const float v1 = get_val(tf_targets[i], dt);
-                    input.tf_prev[i] = v0 * 2.0f - v1;
+                    lua_getfield(L, -1, "getvalue");
+                    lua_pushstring(L, tracks[i]);
+                    lua_pushnumber(L, 0.0);
+                    lua_call(L, 2, 1);
+                    lua_getfield(L, -2, "getvalue");
+                    lua_pushstring(L, tracks[i]);
+                    lua_pushnumber(L, dt);
+                    lua_call(L, 2, 1);
+                    const double v0 = lua_tonumber(L, -2);
+                    const double v1 = lua_tonumber(L, -1);
+                    input.tf_prev[i] = static_cast<float>(v0 * 2.0 - v1);
+                    lua_pop(L, 2);
                 }
                 break;
             case 2: {
                 const double dt2 = dt * 2.0;
                 for (std::size_t i = 0; i < 6; ++i) {
-                    const float v0 = get_val(tf_targets[i], 0);
-                    const float v1 = get_val(tf_targets[i], dt);
-                    const float v2 = get_val(tf_targets[i], dt2);
-                    input.tf_prev[i] = v0 * 3.0f - v1 * 3.0f + v2;
+                    lua_getfield(L, -1, "getvalue");
+                    lua_pushstring(L, tracks[i]);
+                    lua_pushnumber(L, 0.0);
+                    lua_call(L, 2, 1);
+                    lua_getfield(L, -2, "getvalue");
+                    lua_pushstring(L, tracks[i]);
+                    lua_pushnumber(L, dt);
+                    lua_call(L, 2, 1);
+                    lua_getfield(L, -3, "getvalue");
+                    lua_pushstring(L, tracks[i]);
+                    lua_pushnumber(L, dt2);
+                    lua_call(L, 2, 1);
+                    const double v0 = lua_tonumber(L, -3);
+                    const double v1 = lua_tonumber(L, -2);
+                    const double v2 = lua_tonumber(L, -1);
+                    input.tf_prev[i] = static_cast<float>(v0 * 3.0 - v1 * 3.0 + v2);
+                    lua_pop(L, 3);
                 }
             } break;
             default:
@@ -107,10 +129,17 @@ Obj::get_input(std::uint32_t ext) {
         }
     } else if (input.frame) {
         lua_getfield(L, -1, "time");
-        const double prev = lua_tonumber(L, -1) - dt;
+        const double time_prev = lua_tonumber(L, -1) - dt;
         lua_pop(L, 1);
 
-        for (std::size_t i = 0; i < 6; ++i) input.tf_prev[i] = get_val(tf_targets[i], prev);
+        for (std::size_t i = 0; i < 6; ++i) {
+            lua_getfield(L, -1, "getvalue");
+            lua_pushstring(L, tracks[i]);
+            lua_pushnumber(L, time_prev);
+            lua_call(L, 2, 1);
+            input.tf_prev[i] = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+        }
     }
 
     input.pivot = input.tf_curr.get_center() + input.geo_curr.get_center();
@@ -176,16 +205,4 @@ Obj::print(const std::string &str) {
     lua_getglobal(L, "debug_print");
     lua_pushstring(L, str.c_str());
     lua_call(L, 1, 0);
-    lua_pop(L, 1);
-}
-
-float
-Obj::get_val(const char *target, double time) {
-    lua_getfield(L, -1, "getvalue");
-    lua_pushstring(L, target);
-    lua_pushnumber(L, time);
-    lua_call(L, 2, 1);
-    float v = static_cast<float>(lua_tonumber(L, -1));
-    lua_pop(L, 1);
-    return v;
 }

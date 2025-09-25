@@ -14,7 +14,7 @@ struct Param {
     std::uint32_t ext;
     bool resize;
     std::uint32_t geo_cache;
-    std::uint32_t geo_ctrl;
+    std::uint32_t cache_ctrl;
     float mix;
     bool print_info;
     bool is_valid;

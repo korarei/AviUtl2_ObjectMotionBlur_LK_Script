@@ -37,8 +37,6 @@ private:
     [[nodiscard]] lua_Number get_number(int idx, lua_Number d);
     [[nodiscard]] lua_Integer get_integer(int idx, lua_Integer d);
     [[nodiscard]] bool get_boolean(int idx, bool d);
-
-    [[nodiscard]] float get_val(const char *target, double time);
 };
 
 inline const char *

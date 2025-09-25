@@ -77,7 +77,7 @@ cleanup_geo(const Param &param, const Input &input) {
     if (!input.is_last[0])
         return;
 
-    switch (param.geo_ctrl) {
+    switch (param.cache_ctrl) {
         case 1:
             if (input.is_last[1])
                 geo_map.clear(input.obj_id);
