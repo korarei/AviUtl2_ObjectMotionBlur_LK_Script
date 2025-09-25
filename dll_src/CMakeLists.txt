@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20.0)
-project(ObjectMotionBlur_LK VERSION 0.2.1 LANGUAGES CXX)
+project(ObjectMotionBlur_LK VERSION 0.2.2 LANGUAGES CXX)
 
 # Path Settings.
 set(LUA_DIR "${CMAKE_SOURCE_DIR}/../.lua")
