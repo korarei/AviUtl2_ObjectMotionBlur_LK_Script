@@ -70,8 +70,7 @@ Obj::get_input(std::uint32_t ext) {
     input.is_last = {input.obj_idx == input.obj_num - 1, input.frame == total_frame - 1};
 
     const double dt = 1.0 / fps;
-    input.geo_curr.set_flag(true);
-    input.geo_curr.set_frame(input.frame);
+    input.geo_curr.set_state(true, input.frame);
 
     for (std::size_t i = 0; i < 6; ++i) {
         lua_getfield(L, -1, fields[i]);

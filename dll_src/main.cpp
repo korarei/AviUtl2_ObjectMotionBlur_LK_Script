@@ -29,10 +29,10 @@ set_init_geo(std::uint32_t ext, const Input input) noexcept {
 
     switch (ext) {
         case 1u:
-            geo_map.write(input.obj_id, input.obj_idx, 0, geos[0] * 2.0 - geos[1]);
+            geo_map.overwrite(input.obj_id, input.obj_idx, 0, geos[0] * 2.0f - geos[1]);
             return;
         case 2u:
-            geo_map.write(input.obj_id, input.obj_idx, 0, geos[0] * 3.0 - geos[1] * 3.0 + geos[2]);
+            geo_map.overwrite(input.obj_id, input.obj_idx, 0, geos[0] * 3.0f - geos[1] * 3.0f + geos[2]);
             return;
         default:
             return;
@@ -102,15 +102,15 @@ process_motion_blur(lua_State *L) {
     if (input.obj_idx >= input.obj_num)
         return 0;
 
-    bool flag = param.is_valid && (param.ext || input.frame);
+    const bool on = param.is_valid && (param.ext || input.frame);
     std::uint32_t req_smp = 0u;
 
     geo_map.resize(input.obj_id, input.obj_idx, input.obj_num, param.geo_cache);
 
     if (param.geo_cache == 1u || (param.geo_cache == 2u && param.ext && input.frame <= param.ext))
-        geo_map.write(input.obj_id, input.obj_idx, input.frame + 1, input.geo_curr);
+        geo_map.overwrite(input.obj_id, input.obj_idx, input.frame + 1, input.geo_curr);
 
-    if (flag) {
+    if (on) {
         const float amt = param.shutter_angle / 360.0f;
 
         std::array<Vec2<float>, 2> margin{};
@@ -154,10 +154,8 @@ process_motion_blur(lua_State *L) {
         }
     }
 
-    if (param.geo_cache == 2u) {
-        if (auto geo = geo_map.read(input.obj_id, input.obj_idx, 7); !geo || !geo->is_cached(input.frame))
-            geo_map.write(input.obj_id, input.obj_idx, 7, input.geo_curr);
-    }
+    if (param.geo_cache == 2u)
+        geo_map.write(input.obj_id, input.obj_idx, 7, input.geo_curr);
 
     cleanup_geo(param, input);
 
@@ -170,6 +168,7 @@ process_motion_blur(lua_State *L) {
                 input.obj_id, input.obj_idx, req_smp);
         obj.print(info);
     }
+
     return 0;
 }
 

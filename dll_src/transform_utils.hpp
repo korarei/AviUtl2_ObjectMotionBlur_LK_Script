@@ -43,12 +43,17 @@ public:
     [[nodiscard]] constexpr Vec2<float> get_pos() const noexcept { return Vec2<float>(data[2], data[3]); }
     [[nodiscard]] constexpr float get_rot() const noexcept { return to_rad(data[4]); }
     [[nodiscard]] constexpr float get_zoom() const noexcept { return std::max(data[5], ZOOM_MIN); }
-    [[nodiscard]] constexpr bool get_flag() const noexcept { return flag; }
 
-    constexpr void set_flag(bool flag_) noexcept { flag = flag_; }
-    constexpr void set_frame(std::size_t f) noexcept { frame = f; }
+    constexpr void set_state(bool flag_, std::size_t frame_) noexcept {
+        flag = flag_;
+        frame = frame_;
+    }
 
-    [[nodiscard]] constexpr bool is_cached(std::size_t f) const noexcept { return flag && f == frame; }
+    [[nodiscard]] constexpr bool is_cached(const Geo &geo) const noexcept {
+        return flag == geo.flag && frame == geo.frame;
+    }
+
+    [[nodiscard]] constexpr bool is_valid() const noexcept { return flag; }
 
 private:
     bool flag;
