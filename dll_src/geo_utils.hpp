@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
-#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -16,7 +15,7 @@ public:
     constexpr GeoMap() noexcept = default;
     constexpr ~GeoMap() noexcept = default;
 
-    constexpr void resize(std::size_t hash, std::size_t idx, std::size_t num, std::uint32_t mode) noexcept {
+    constexpr void resize(std::size_t hash, std::size_t idx, std::size_t num, std::uint32_t mode) {
         if (mode == 0u) {
             clear(hash);
             return;
@@ -32,15 +31,16 @@ public:
             list.resize(num);
         }
 
-        auto &block_map = list[idx];
+        auto &block_map = list.at(idx);
 
-        if (auto it = block_map.find(0); mode == 2u && it != block_map.end() && block_map.size() != 1) {
+        if (mode == 1u || block_map.size() == 1)
+            return;
+
+        if (auto it = block_map.find(0); it != block_map.end()) {
             auto node = block_map.extract(it);
             BlockMap{}.swap(block_map);
             block_map.insert(std::move(node));
         }
-
-        return;
     }
 
     constexpr void write(std::size_t hash, std::size_t idx, std::size_t pos, const Geo &geo) noexcept {
@@ -55,14 +55,33 @@ public:
             return;
 
         auto &block = list[idx][id];
+
+        if (block[offset].is_cached(geo))
+            return;
+
         block[offset] = geo;
-        return;
+    }
+
+    constexpr void overwrite(std::size_t hash, std::size_t idx, std::size_t pos, const Geo &geo) noexcept {
+        const auto [id, offset] = calc_block_pos(pos);
+
+        auto it_hash = map.find(hash);
+        if (it_hash == map.end())
+            return;
+
+        auto &list = it_hash->second;
+        if (idx >= list.size())
+            return;
+
+        auto &block = list[idx][id];
+
+        block[offset] = geo;
     }
 
     [[nodiscard]] constexpr const Geo *read(std::size_t hash, std::size_t idx, std::size_t pos) const noexcept {
         const auto [id, offset] = calc_block_pos(pos);
 
-        if (auto block = get_block(hash, idx, id); block && (*block)[offset].get_flag())
+        if (auto block = get_block(hash, idx, id); block && (*block)[offset].is_valid())
             return &(*block)[offset];
         else
             return nullptr;
@@ -78,7 +97,6 @@ public:
         auto &list = it_hash->second;
         std::vector<BlockMap>{}.swap(list);
         map.erase(hash);
-        return;
     }
 
 private:

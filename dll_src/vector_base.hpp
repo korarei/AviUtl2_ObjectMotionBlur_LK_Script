@@ -178,6 +178,22 @@ public:
         return result;
     }
 
+    [[nodiscard]] constexpr Derived max(const Derived &other) const noexcept {
+        Derived result;
+        for (std::size_t i = 0; i < N; ++i) {
+            result[i] = std::max(data[i], other[i]);
+        }
+        return result;
+    }
+
+    [[nodiscard]] constexpr Derived min(const Derived &other) const noexcept {
+        Derived result;
+        for (std::size_t i = 0; i < N; ++i) {
+            result[i] = std::min(data[i], other[i]);
+        }
+        return result;
+    }
+
     // Helper functions.
     [[nodiscard]] static constexpr bool is_zero(const T &val) noexcept {
         if constexpr (std::is_floating_point_v<T>) {
