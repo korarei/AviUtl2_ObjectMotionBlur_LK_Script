@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include "transform_utils.hpp"
 #include "vector_2d.hpp"

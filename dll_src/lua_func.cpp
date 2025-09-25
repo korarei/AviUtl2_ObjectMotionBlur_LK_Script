@@ -9,28 +9,6 @@ Obj::Obj(lua_State *L) : L(L) {
 
 Obj::~Obj() { luaL_unref(L, LUA_REGISTRYINDEX, obj_ref); }
 
-bool
-Obj::get_saving() {
-    lua_rawgeti(L, LUA_REGISTRYINDEX, obj_ref);
-    lua_getfield(L, -1, "getinfo");
-    lua_pushstring(L, "saving");
-    lua_call(L, 1, 1);
-    bool saving = lua_toboolean(L, -1);
-    lua_pop(L, 2);
-    return saving;
-}
-
-float
-Obj::get_val(const char *target, double time) {
-    lua_getfield(L, -1, "getvalue");
-    lua_pushstring(L, target);
-    lua_pushnumber(L, time);
-    lua_call(L, 2, 1);
-    float v = static_cast<float>(lua_tonumber(L, -1));
-    lua_pop(L, 1);
-    return v;
-}
-
 Param
 Obj::get_param() {
     constexpr float e = 1.0e-4f;
@@ -48,7 +26,16 @@ Obj::get_param() {
     std::uint32_t smp_lim = (!preview_smp_lim || get_saving()) ? render_smp_lim : preview_smp_lim;
     bool is_valid = shutter_angle > e && smp_lim > 1u;
 
-    return Param{get_string(1, "motion_blur"), shutter_angle, smp_lim, ext, resize, geo_cache, geo_ctrl, mix, print_info, is_valid};
+    return Param{get_string(1, "motion_blur"),
+                 shutter_angle,
+                 smp_lim,
+                 ext,
+                 resize,
+                 geo_cache,
+                 geo_ctrl,
+                 mix,
+                 print_info,
+                 is_valid};
 }
 
 Input
@@ -126,10 +113,21 @@ Obj::get_input(std::uint32_t ext) {
         for (std::size_t i = 0; i < 6; ++i) input.tf_prev[i] = get_val(tf_targets[i], prev);
     }
 
-    input.pivot = Vec2<float>(input.tf_curr[0] + input.geo_curr[0], input.tf_curr[1] + input.geo_curr[1]);
+    input.pivot = input.tf_curr.get_center() + input.geo_curr.get_center();
 
     lua_pop(L, 1);
     return input;
+}
+
+bool
+Obj::get_saving() {
+    lua_rawgeti(L, LUA_REGISTRYINDEX, obj_ref);
+    lua_getfield(L, -1, "getinfo");
+    lua_pushstring(L, "saving");
+    lua_call(L, 1, 1);
+    bool saving = lua_toboolean(L, -1);
+    lua_pop(L, 2);
+    return saving;
 }
 
 void
@@ -179,4 +177,15 @@ Obj::print(const std::string &str) {
     lua_pushstring(L, str.c_str());
     lua_call(L, 1, 0);
     lua_pop(L, 1);
+}
+
+float
+Obj::get_val(const char *target, double time) {
+    lua_getfield(L, -1, "getvalue");
+    lua_pushstring(L, target);
+    lua_pushnumber(L, time);
+    lua_call(L, 2, 1);
+    float v = static_cast<float>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+    return v;
 }
