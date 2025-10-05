@@ -7,7 +7,6 @@
 --check@c1:Resize,1
 --select@s1:Geo Cache,None=0,Full=1,Minimal=2
 --select@s2:Cache Control,Off=0,Auto=1,All=2,Current=3
---track@t6:Object ID,0,15000,0,1
 --track@t5:Mix,0,100,0,0.01
 --check@c2:Print Information,0
 --value@_0:PI,{}
@@ -15,8 +14,8 @@
 ${SHADER_MOTION_BLUR}
 ]]
 
-if (not pcall(obj.getvalue, "cx")) then
-    debug_print("AviUtl ExEdit2 beta12 or later is required.")
+if (obj.getinfo("version") < 2001400) then
+    debug_print("AviUtl ExEdit2 beta14 or later is required.")
     return
 end
 
@@ -38,7 +37,6 @@ local ext = tonumber(_0.extrapolation) or s0 s0 = nil
 local resize = tobool(_0.resize, c1 ~= 0) c1 = nil
 local geo_cache = tonumber(_0.geo_cache or s1) s1 = nil
 local cache_ctrl = tonumber(_0.cache_ctrl or s2) s2 = nil
-local obj_id = math.max(tonumber(_0.object_id) or t6, 0) t6 = nil -- beta 11a
 local mix = tonumber(_0.mix) or t5 t5 = nil
 local print_info = tobool(_0.print_info, c2 ~= 0) c2 = nil
 _0 = nil
@@ -54,6 +52,5 @@ lib.process_motion_blur(
     geo_cache,
     cache_ctrl,
     mix,
-    print_info,
-    obj_id
+    print_info
 )
