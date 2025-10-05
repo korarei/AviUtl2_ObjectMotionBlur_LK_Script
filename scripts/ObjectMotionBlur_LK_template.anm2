@@ -1,4 +1,4 @@
---infomation:${SCRIPT_NAME} ${VERSION}
+--infomation:${SCRIPT_NAME} ${VERSION} by ${AUTHOR}
 --label:${LABEL}
 --track2:Shutter Angle,0,360,180
 --track3:Sample Limit,1,4096,256,1
