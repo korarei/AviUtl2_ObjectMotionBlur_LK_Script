@@ -52,12 +52,13 @@ Obj::get_input(std::uint32_t ext) {
     input.res = Vec2<float>(static_cast<float>(lua_tonumber(L, -2)), static_cast<float>(lua_tonumber(L, -1)));
     lua_pop(L, 2);
 
-    input.obj_id = static_cast<std::size_t>(get_integer(11, 0ll));
-    lua_getfield(L, -1, "index");
-    lua_getfield(L, -2, "num");
+    lua_getfield(L, -1, "id");
+    lua_getfield(L, -2, "index");
+    lua_getfield(L, -3, "num");
+    input.obj_id = static_cast<std::size_t>(lua_tointeger(L, -3));
     input.obj_idx = static_cast<std::size_t>(lua_tointeger(L, -2));
     input.obj_num = static_cast<std::size_t>(lua_tointeger(L, -1));
-    lua_pop(L, 2);
+    lua_pop(L, 3);
 
     lua_getfield(L, -1, "frame");
     lua_getfield(L, -2, "totalframe");

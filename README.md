@@ -11,10 +11,10 @@
 
 ## 動作確認
 
-- [AviUtl ExEdit2 beta12](https://spring-fragrance.mints.ne.jp/aviutl/)
+- [AviUtl ExEdit2 beta14](https://spring-fragrance.mints.ne.jp/aviutl/)
 
 > [!CAUTION]
-> beta12以降必須．
+> beta14以降必須．
 
 ## 導入・削除・更新
 
@@ -38,7 +38,7 @@
 
 ## `ObjectMotionBlur@MotionBlur_K`との相違点
 
-このスクリプトは[ObjectMotionBlur@MotionBlur_K](https://github.com/korarei/AviUtl_MotionBlur_K_Script)の劣化移植版である．いくつかの機能が削除，制限，追加されている．
+このスクリプトは[ObjectMotionBlur@MotionBlur_K](https://github.com/korarei/AviUtl_MotionBlur_K_Script)の移植版である．いくつかの機能が削除，追加されている．
 
 ### 削除項目
 
@@ -47,12 +47,6 @@
 - Shutter Angle (`[360.0, 720.0]`): 非現実的な数値を認めない．
 
 - Shutter Phase: `-shutter_angle`で固定．
-
-### 制限項目
-
-`beta12`で提供されているライブラリのみを使用したため制限された．
-
-- Object ID (オブジェクト固有な値)
 
 ### 追加項目
 
@@ -158,7 +152,7 @@
 
   表示される情報は以下のとおり
 
-  - Object ID (所謂`Object Index`．GeometryはObject IDごとに保存される．)
+  - Object ID (所謂`obj.id`．GeometryはObject IDごとに保存される．)
 
   - Index (所謂`obj.index`．個別オブジェクトのインデックス．)
 
@@ -179,7 +173,6 @@
     resize = true, -- booleanも可
     geo_cache = 0,
     cache_ctrl = 0,
-    object_id = 0,
     mix = 0.0,
     print_info = false, -- booleanも可
   }
@@ -259,6 +252,10 @@ Doug Lea and released to the public domain, as explained at
 https://creativecommons.org/licenses/publicdomain
 
 ## Change Log
+- **v1.0.0**
+  - `Object ID`をスクリプト側で入手できるように変更．
+  - `Print Information`で表示される`Required Samples`が1少なかった問題の解決．
+
 - **v0.2.2**
   - luaの`require`から呼び出せるように変更．
   - リサイズ計算の精度向上．

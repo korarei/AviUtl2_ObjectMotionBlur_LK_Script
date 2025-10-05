@@ -170,7 +170,7 @@ process_motion_blur(lua_State *L) {
                     "Object ID       : {}\n"
                     "Index           : {}\n"
                     "Required Samples: {}",
-                    input.obj_id, input.obj_idx, req_smp);
+                    input.obj_id, input.obj_idx, req_smp + 1u);
             obj.print(info);
         }
 

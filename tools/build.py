@@ -58,6 +58,7 @@ def main():
     replacements.update({
         "LABEL": config["label"],
         "SCRIPT_NAME": config["script_name"],
+        "AUTHOR": config["author"],
         "VERSION": args.tag
     })
 
