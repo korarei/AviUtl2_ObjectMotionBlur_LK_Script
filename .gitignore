@@ -1,4 +1,4 @@
-**/__pycache__/
-**/build/
 .vscode/
-.lua/
+**/build/
+**/release/
+**/aviutl2_sdk/

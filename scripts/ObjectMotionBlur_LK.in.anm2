@@ -1,4 +1,4 @@
---infomation:${SCRIPT_NAME} ${VERSION} by ${AUTHOR}
+--information:${SCRIPT_NAME} ${VERSION} by ${AUTHOR}
 --label:${LABEL}
 --track2:Shutter Angle,0,360,180
 --track3:Sample Limit,1,4096,256,1
@@ -11,7 +11,7 @@
 --check@c2:Print Information,0
 --value@_0:PI,{}
 --[[pixelshader@motion_blur:
-${SHADER_MOTION_BLUR}
+--#include "shaders/motion_blur.hlsl"
 ]]
 
 if (obj.getinfo("version") < 2001400) then

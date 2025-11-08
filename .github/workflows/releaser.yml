@@ -11,6 +11,9 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
 
     steps:
     - name: Checkout repository
@@ -21,26 +24,41 @@ jobs:
       with:
         arch: x64
 
-    - name: Install LuaJIT
-      uses: leafo/gh-actions-lua@v12
-      with:
-        luaVersion: 'luajit-2.1'
+    - name: Download sdk
+      run: |
+        Invoke-WebRequest -UserAgent "Wget" -Uri https://spring-fragrance.mints.ne.jp/aviutl/aviutl2_sdk.zip -OutFile aviutl2_sdk.zip
+        Expand-Archive -Path aviutl2_sdk.zip -DestinationPath ./dll_src/aviutl2_sdk -Force
+        Remove-Item aviutl2_sdk.zip -Force
+
+    - name: Convert file encoding
+      run: |
+        $folder = "./dll_src/aviutl2_sdk"
+        Get-ChildItem -Path $folder -Filter "*.h" -Recurse | ForEach-Object {
+          $file = $_.FullName
+          $content = Get-Content $file -Raw -Encoding "shift_jis"
+          $content = $content -replace "`r`n", "`n"
+          Set-Content $file -Value $content -Encoding utf8
+        }
 
     - name: Build
       run: |
         cd ${{ github.workspace }}
-        cmake -S dll_src -B dll_src/build -DCMAKE_GENERATOR_PLATFORM=x64
+        $version = "${{ github.ref_name }}" -replace '^v', ''
+        cmake -S dll_src -B dll_src/build -DCMAKE_GENERATOR_PLATFORM=x64 -DVERSION="$version"
         cmake --build dll_src/build --config Release
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: publish
-        path: ${{ github.workspace }}/dll_src/build/Release/*.dll
+        name: module
+        path: ${{ github.workspace }}/dll_src/build/Release/*.mod2
   
   releaser:
     needs: build
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
 
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -50,13 +68,12 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        submodules: "recursive"
 
     - name: Download artifact
       uses: actions/download-artifact@v4
       with:
-        name: publish
-        path: ${{ github.workspace }}/build/publish
+        name: module
+        path: ${{ github.workspace }}/dll_src/build/Release
 
     - name: Extract script name
       run: |
@@ -67,15 +84,18 @@ jobs:
     - name: Setup python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.14'
 
     - name: Build script
       run: |
-          python tools/build.py --tag ${{ github.ref_name }}
+          pip install git+https://github.com/korarei/AviUtl2_Astra.git@v0.3.0
+          cd ${{ github.workspace }}/scripts
+          astra build -v ${{ github.ref_name }}
+          astra release
 
     - name: Create release
       uses: softprops/action-gh-release@v2
       with:
         name: ${{ env.SCRIPT_NAME }}_${{ github.ref_name }}
-        files: 'build/*.zip'
-        body_path: build/release_note.txt
+        files: 'scripts/release/*.zip'
+        body_path: scripts/release/release_notes.txt
