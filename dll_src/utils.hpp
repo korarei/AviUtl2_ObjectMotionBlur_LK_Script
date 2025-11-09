@@ -8,19 +8,19 @@
 #endif
 
 inline bool
-is_zero(float val) {
-    constexpr float epsilon = 1.0e-4f;
-    return std::fabsf(val) <= epsilon;
+is_zero(double val) {
+    constexpr double eps = 1.0e-4;
+    return std::abs(val) < eps;
 }
 
 inline bool
-are_equal(float a, float b) {
-    constexpr float epsilon = 1.0e-4f;
-    return std::fabsf(a - b) <= epsilon;
+are_equal(double a, double b) {
+    constexpr double eps = 1.0e-4;
+    return std::abs(a - b) < eps;
 }
 
-inline constexpr float
-to_rad(float deg) {
-    constexpr float inv_180 = 1.0f / 180.0f;
-    return deg * static_cast<float>(M_PI) * inv_180;
+inline constexpr double
+to_rad(double deg) {
+    constexpr double r180 = 1.0 / 180.0;
+    return deg * M_PI * r180;
 }

@@ -1,51 +1,36 @@
 cmake_minimum_required(VERSION 3.20.0)
-project(ObjectMotionBlur_LK VERSION 1.0.0 LANGUAGES CXX)
 
-# Path Settings.
-set(LUA_DIR "${CMAKE_SOURCE_DIR}/../.lua")
-set(LUAJIT_DEF "${CMAKE_SOURCE_DIR}/luajit/luajit.def")
-set(LUAJIT_LIB "${CMAKE_CURRENT_BINARY_DIR}/luajit/luajit.lib")
+set(VERSION "0.1.0" CACHE STRING "Project version")
+project(ObjectMotionBlur_LK VERSION ${VERSION} LANGUAGES CXX)
 
-# Generate the luajit.lib
-if(MSVC)
-    add_custom_command(
-        OUTPUT ${LUAJIT_LIB}
-        COMMAND lib /DEF:${LUAJIT_DEF} /OUT:${LUAJIT_LIB} /MACHINE:X64
-        DEPENDS ${LUAJIT_DEF}
-        VERBATIM
-    )
-
-    add_custom_target(gen_luajit_lib DEPENDS ${LUAJIT_LIB})
-endif()
-
-# Importing Lua Libraries.
-add_library(luajit SHARED IMPORTED)
-set_target_properties(luajit PROPERTIES
-    IMPORTED_IMPLIB "${LUAJIT_LIB}"
-    INTERFACE_INCLUDE_DIRECTORIES "${LUA_DIR}/include/luajit-2.1"
-)
+# Path settings.
+set(SDK_DIR "${CMAKE_SOURCE_DIR}/aviutl2_sdk")
 
 # Main target definition.
 add_library(${PROJECT_NAME} SHARED
     main.def
     main.cpp
     transform_utils.cpp
-    lua_func.cpp
 )
 
-# Def file specification.
+# Include directories.
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${SDK_DIR}
+)
+
+# Output settings.
 set_target_properties(${PROJECT_NAME} PROPERTIES
     PREFIX ""
-)
-
-# Library Link.
-add_dependencies(${PROJECT_NAME} gen_luajit_lib)
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    luajit
+    SUFFIX ".mod2"
 )
 
 # C++ version specification.
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_23)
+
+# Definitions.
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    VERSION=L"${VERSION}"
+)
 
 # Compiler Dependent Options.
 if (MSVC)

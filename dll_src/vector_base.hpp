@@ -42,6 +42,10 @@ public:
     [[nodiscard]] constexpr ConstIterator end() const noexcept { return data.end(); }
     [[nodiscard]] constexpr ConstIterator cend() const noexcept { return data.cend(); }
 
+    // Data pointer access.
+    [[nodiscard]] constexpr T *ptr() noexcept { return data.data(); }
+    [[nodiscard]] constexpr const T *ptr() const noexcept { return data.data(); }
+
     // Size and capacity.
     [[nodiscard]] static constexpr std::size_t size() noexcept { return N; }
 
@@ -255,6 +259,13 @@ public:
     [[nodiscard]] constexpr const T &operator()(std::size_t col, std::size_t row) const noexcept {
         return cols[col][row];
     }
+
+    // Data pointer access.
+    [[nodiscard]] constexpr T *ptr() noexcept { return cols.data()->ptr(); }
+    [[nodiscard]] constexpr const T *ptr() const noexcept { return cols.data()->ptr(); }
+
+    // Size and capacity.
+    [[nodiscard]] static constexpr std::size_t size() noexcept { return N * VecType::size(); }
 
     // Assignment operators (return Derived&).
     constexpr Derived &operator+=(const Derived &other) noexcept {

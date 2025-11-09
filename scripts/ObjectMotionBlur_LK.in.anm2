@@ -10,7 +10,7 @@
 --track5:Mix,0,100,0,0.01
 --check1:Print Information,0
 --value@_0:PI,{}
---data@geo:52
+--data@geo:1024
 --[[pixelshader@motion_blur:
 --#include "shaders/motion_blur.hlsl"
 ]]
@@ -30,29 +30,32 @@ local function clamp(v, min, max)
 end
 
 _0 = _0 or {}
-local shutter_angle = clamp(tonumber(_0.shutter_angle) or obj.track2, 0.0, 360.0)
+local amt = clamp(tonumber(_0.shutter_angle) or obj.track2, 0.0, 360.0) / 360.0
 local smp_lim_r = math.max(tonumber(_0.render_sample_limit) or obj.track3, 1)
 local smp_lim_p = math.max(tonumber(_0.preview_sample_limit) or obj.track4, 0)
-local ext = clamp(tonumber(_0.extrapolation) or s0, 0, 2) s0 = nil
+local ext = clamp(tonumber(_0.extrapolation) or s0, 0, 2)
+s0 = nil
 local resize = tobool(_0.resize, obj.check0)
-local geo_cache = clamp(tonumber(_0.geo_cache or s1), 0, 2) s1 = nil
-local cache_ctrl = clamp(tonumber(_0.cache_ctrl or s2), 0, 3) s2 = nil
+local geo_cache = clamp(tonumber(_0.geo_cache or s1), 0, 2)
+s1 = nil
+local cache_ctrl = clamp(tonumber(_0.cache_ctrl or s2), 0, 3)
+s2 = nil
 local mix = clamp(tonumber(_0.mix) or obj.track5, 0.0, 100.0) * 0.01
 local print_info = tobool(_0.print_info, obj.check1)
 _0 = nil
 
-if (shutter_angle < 1.0e-4 or obj.index >= obj.num) then
+if (amt < 1.0e-4 or obj.index >= obj.num) then
     return
 end
 
 local gv = obj.getvalue
 local dt = 1.0 / obj.framerate
+local cx, cy = gv("cx"), gv("cy")
 
 local params = {
-    shutter_angle = shutter_angle,
+    amt = amt,
     smp_lim = (obj.getinfo("saving") or smp_lim_p < 1) and smp_lim_r or smp_lim_p,
     ext = ext,
-    resize = resize and 1 or 0,
     geo_cache = geo_cache,
     cache_ctrl = cache_ctrl
 }
@@ -60,9 +63,11 @@ local params = {
 local context = {
     w = obj.w,
     h = obj.h,
-    obj_id = obj.id,
-    obj_idx = obj.index,
-    obj_num = obj.num,
+    cx = cx + obj.cx,
+    cy = cy + obj.cy,
+    id = obj.id,
+    idx = obj.index,
+    num = obj.num,
     frame = obj.frame,
     total_frame = obj.totalframe
 }
@@ -76,32 +81,32 @@ local geo_curr = {
     zoom = obj.zoom
 }
 
-local tf_curr = {
-    cx = gv("cx"),
-    cy = gv("cy"),
+local xform_curr = {
+    cx = cx,
+    cy = cy,
     x = gv("x"),
     y = gv("y"),
     rz = gv("rz"),
     zoom = gv("zoom")
 }
 
-local tf_prev = {}
+local xform_prev = {}
 if (obj.frame == 0) then
     if (ext == 1) then
-        for k, v in pairs(tf_curr) do
-            tf_prev[k] = v * 2.0 - gv(k, dt)
+        for k, v in pairs(xform_curr) do
+            xform_prev[k] = v * 2.0 - gv(k, dt)
         end
     elseif (ext == 2) then
         local dt2 = dt * 2.0
-        for k, v in pairs(tf_curr) do
-            tf_prev[k] = v * 3.0 - gv(k, dt) * 3.0 + gv(k, dt2)
+        for k, v in pairs(xform_curr) do
+            xform_prev[k] = v * 3.0 - gv(k, dt) * 3.0 + gv(k, dt2)
         end
     else
-        tf_prev = tf_curr
+        xform_prev = xform_curr
     end
 else
     local t = obj.time - dt
-    tf_prev = {
+    xform_prev = {
         cx = gv("cx", t),
         cy = gv("cy", t),
         x = gv("x", t),
@@ -112,7 +117,8 @@ else
 end
 
 local lib = obj.module("ObjectMotionBlur_LK")
-local req_smp, smp, htm, drift, margin = lib.compute_motion(params, context, geo_curr, obj.data("geo"), tf_curr, tf_prev)
+local geo_data = obj.data("geo")
+local req_smp, smp, htm, drift, margin = lib.compute_motion(params, context, geo_data, geo_curr, xform_curr, xform_prev)
 
 if (resize) then
     obj.effect("領域拡張", "上", margin.top, "下", margin.bottom, "左", margin.left, "右", margin.right)
@@ -120,16 +126,18 @@ if (resize) then
     obj.cy = obj.cy + (margin.top - margin.bottom) * 0.5
 end
 
-obj.pixelshader("motion_blur", "object", "object", {
-    htm[0][0], htm[0][1], htm[0][2], 0.0,
-    htm[1][0], htm[1][1], htm[1][2], 0.0,
-    htm[2][0], htm[2][1], htm[2][2], 0.0,
-    drift.x, drift.y,
-    obj.w, obj.h,
-    obj.w * 0.5 + obj.cx, obj.h * 0.5 + obj.cy,
-    smp,
-    mix
-}, "copy", "clip")
+if (smp > 0) then
+    obj.pixelshader("motion_blur", "object", "object", {
+        htm[1], htm[2], htm[3], 0.0,
+        htm[4], htm[5], htm[6], 0.0,
+        htm[7], htm[8], htm[9], 0.0,
+        drift.x, drift.y,
+        obj.w, obj.h,
+        obj.w * 0.5 + obj.cx, obj.h * 0.5 + obj.cy,
+        smp,
+        mix
+    }, "copy", "clip")
+end
 
 if (print_info) then
     debug_print(string.format([[

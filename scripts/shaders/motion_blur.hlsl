@@ -16,7 +16,7 @@ struct PS_Input {
 
 float4 motion_blur(PS_Input input) : SV_Target {
     const float2 texel = rcp(res);
-    const uint count = uint(n);
+    const int count = int(n);
 
     float3 pos = float3(mad(input.uv, res, -pivot), 1.0);
     column_major float3x3 htm = htm_base;
@@ -24,7 +24,7 @@ float4 motion_blur(PS_Input input) : SV_Target {
     pose._m02_m12_m22 = float3(0.0, 0.0, 1.0);
 
     float4 col = src.Sample(smp, (pos.xy + pivot) * texel);
-    for (uint i = 1; i <= count; ++i) {
+    for (int i = 1; i <= count; ++i) {
         pos = mul(htm, pos);
         float2 coord = mad(drift, -i, pos.xy + pivot) * texel;
         col += src.Sample(smp, coord);
