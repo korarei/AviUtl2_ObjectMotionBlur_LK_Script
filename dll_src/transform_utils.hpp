@@ -56,9 +56,9 @@ public:
     [[nodiscard]] constexpr bool is_valid() const noexcept { return flag; }
 
 private:
-    bool flag;
-    std::size_t frame;
     std::array<float, 6> data;
+    std::size_t frame;
+    bool flag;
 };
 
 class Transform {

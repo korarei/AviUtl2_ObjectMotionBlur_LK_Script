@@ -2,22 +2,18 @@
 --label:${LABEL}
 --track2:Shutter Angle,0,360,180
 --track3:Sample Limit,1,4096,256,1
---track@t4:Preview Limit,0,4096,0,1
+--track4:Preview Limit,0,4096,0,1
 --select@s0:Extrapolation=2,None=0,Linear=1,Quadratic=2
---check@c1:Resize,1
+--check0:Resize,1
 --select@s1:Geo Cache,None=0,Full=1,Minimal=2
 --select@s2:Cache Control,Off=0,Auto=1,All=2,Current=3
---track@t5:Mix,0,100,0,0.01
---check@c2:Print Information,0
+--track5:Mix,0,100,0,0.01
+--check1:Print Information,0
 --value@_0:PI,{}
+--data@geo:52
 --[[pixelshader@motion_blur:
 --#include "shaders/motion_blur.hlsl"
 ]]
-
-if (obj.getinfo("version") < 2001400) then
-    debug_print("AviUtl ExEdit2 beta14 or later is required.")
-    return
-end
 
 local function tobool(v, d)
     if (type(v) == "boolean") then
@@ -29,28 +25,117 @@ local function tobool(v, d)
     end
 end
 
+local function clamp(v, min, max)
+    return math.min(max, math.max(v, min))
+end
+
 _0 = _0 or {}
-local shutter_angle = tonumber(_0.shutter_angle) or obj.track2
-local render_smp_lim = tonumber(_0.render_sample_limit) or obj.track3
-local preview_smp_lim = tonumber(_0.preview_sample_limit) or t4 t4 = nil
-local ext = tonumber(_0.extrapolation) or s0 s0 = nil
-local resize = tobool(_0.resize, c1 ~= 0) c1 = nil
-local geo_cache = tonumber(_0.geo_cache or s1) s1 = nil
-local cache_ctrl = tonumber(_0.cache_ctrl or s2) s2 = nil
-local mix = tonumber(_0.mix) or t5 t5 = nil
-local print_info = tobool(_0.print_info, c2 ~= 0) c2 = nil
+local shutter_angle = clamp(tonumber(_0.shutter_angle) or obj.track2, 0.0, 360.0)
+local smp_lim_r = math.max(tonumber(_0.render_sample_limit) or obj.track3, 1)
+local smp_lim_p = math.max(tonumber(_0.preview_sample_limit) or obj.track4, 0)
+local ext = clamp(tonumber(_0.extrapolation) or s0, 0, 2) s0 = nil
+local resize = tobool(_0.resize, obj.check0)
+local geo_cache = clamp(tonumber(_0.geo_cache or s1), 0, 2) s1 = nil
+local cache_ctrl = clamp(tonumber(_0.cache_ctrl or s2), 0, 3) s2 = nil
+local mix = clamp(tonumber(_0.mix) or obj.track5, 0.0, 100.0) * 0.01
+local print_info = tobool(_0.print_info, obj.check1)
 _0 = nil
 
-local lib = require("ObjectMotionBlur_LK")
-lib.process_motion_blur(
-    "motion_blur",
-    shutter_angle,
-    render_smp_lim,
-    preview_smp_lim,
-    ext,
-    resize,
-    geo_cache,
-    cache_ctrl,
-    mix,
-    print_info
-)
+if (shutter_angle < 1.0e-4 or obj.index >= obj.num) then
+    return
+end
+
+local gv = obj.getvalue
+local dt = 1.0 / obj.framerate
+
+local params = {
+    shutter_angle = shutter_angle,
+    smp_lim = (obj.getinfo("saving") or smp_lim_p < 1) and smp_lim_r or smp_lim_p,
+    ext = ext,
+    resize = resize and 1 or 0,
+    geo_cache = geo_cache,
+    cache_ctrl = cache_ctrl
+}
+
+local context = {
+    w = obj.w,
+    h = obj.h,
+    obj_id = obj.id,
+    obj_idx = obj.index,
+    obj_num = obj.num,
+    frame = obj.frame,
+    total_frame = obj.totalframe
+}
+
+local geo_curr = {
+    cx = obj.cx,
+    cy = obj.cy,
+    ox = obj.ox,
+    oy = obj.oy,
+    rz = obj.rz,
+    zoom = obj.zoom
+}
+
+local tf_curr = {
+    cx = gv("cx"),
+    cy = gv("cy"),
+    x = gv("x"),
+    y = gv("y"),
+    rz = gv("rz"),
+    zoom = gv("zoom")
+}
+
+local tf_prev = {}
+if (obj.frame == 0) then
+    if (ext == 1) then
+        for k, v in pairs(tf_curr) do
+            tf_prev[k] = v * 2.0 - gv(k, dt)
+        end
+    elseif (ext == 2) then
+        local dt2 = dt * 2.0
+        for k, v in pairs(tf_curr) do
+            tf_prev[k] = v * 3.0 - gv(k, dt) * 3.0 + gv(k, dt2)
+        end
+    else
+        tf_prev = tf_curr
+    end
+else
+    local t = obj.time - dt
+    tf_prev = {
+        cx = gv("cx", t),
+        cy = gv("cy", t),
+        x = gv("x", t),
+        y = gv("y", t),
+        rz = gv("rz", t),
+        zoom = gv("zoom", t)
+    }
+end
+
+local lib = obj.module("ObjectMotionBlur_LK")
+local req_smp, smp, htm, drift, margin = lib.compute_motion(params, context, geo_curr, obj.data("geo"), tf_curr, tf_prev)
+
+if (resize) then
+    obj.effect("領域拡張", "上", margin.top, "下", margin.bottom, "左", margin.left, "右", margin.right)
+    obj.cx = obj.cx + (margin.left - margin.right) * 0.5
+    obj.cy = obj.cy + (margin.top - margin.bottom) * 0.5
+end
+
+obj.pixelshader("motion_blur", "object", "object", {
+    htm[0][0], htm[0][1], htm[0][2], 0.0,
+    htm[1][0], htm[1][1], htm[1][2], 0.0,
+    htm[2][0], htm[2][1], htm[2][2], 0.0,
+    drift.x, drift.y,
+    obj.w, obj.h,
+    obj.w * 0.5 + obj.cx, obj.h * 0.5 + obj.cy,
+    smp,
+    mix
+}, "copy", "clip")
+
+if (print_info) then
+    debug_print(string.format([[
+        [INFO]
+        Object ID       : %d
+        Index           : %d
+        Required Samples: %d
+    ]], obj.id, obj.index, req_smp))
+end
