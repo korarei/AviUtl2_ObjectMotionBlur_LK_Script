@@ -13,12 +13,6 @@ is_zero(double val) {
     return std::abs(val) < eps;
 }
 
-inline bool
-are_equal(double a, double b) {
-    constexpr double eps = 1.0e-4;
-    return std::abs(a - b) < eps;
-}
-
 inline constexpr double
 to_rad(double deg) {
     constexpr double r180 = 1.0 / 180.0;

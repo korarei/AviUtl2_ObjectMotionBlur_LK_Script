@@ -1,4 +1,4 @@
 EXPORTS
+    InitializeLogger
     InitializePlugin
     GetScriptModuleTable
-    InitializeLogger

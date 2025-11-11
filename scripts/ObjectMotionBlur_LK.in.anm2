@@ -33,13 +33,10 @@ _0 = _0 or {}
 local amt = clamp(tonumber(_0.shutter_angle) or obj.track2, 0.0, 360.0) / 360.0
 local smp_lim_r = math.max(tonumber(_0.render_sample_limit) or obj.track3, 1)
 local smp_lim_p = math.max(tonumber(_0.preview_sample_limit) or obj.track4, 0)
-local ext = clamp(tonumber(_0.extrapolation) or s0, 0, 2)
-s0 = nil
+local ext = clamp(tonumber(_0.extrapolation) or s0, 0, 2) s0 = nil
 local resize = tobool(_0.resize, obj.check0)
-local geo_cache = clamp(tonumber(_0.geo_cache or s1), 0, 2)
-s1 = nil
-local cache_ctrl = clamp(tonumber(_0.cache_ctrl or s2), 0, 3)
-s2 = nil
+local geo_cache = clamp(tonumber(_0.geo_cache or s1), 0, 2) s1 = nil
+local cache_ctrl = clamp(tonumber(_0.cache_ctrl or s2), 0, 3) s2 = nil
 local mix = clamp(tonumber(_0.mix) or obj.track5, 0.0, 100.0) * 0.01
 local print_info = tobool(_0.print_info, obj.check1)
 _0 = nil
@@ -57,7 +54,8 @@ local params = {
     smp_lim = (obj.getinfo("saving") or smp_lim_p < 1) and smp_lim_r or smp_lim_p,
     ext = ext,
     geo_cache = geo_cache,
-    cache_ctrl = cache_ctrl
+    cache_ctrl = cache_ctrl,
+    print_info = print_info
 }
 
 local context = {
@@ -69,7 +67,7 @@ local context = {
     idx = obj.index,
     num = obj.num,
     frame = obj.frame,
-    total_frame = obj.totalframe
+    range = obj.totalframe
 }
 
 local geo_curr = {
@@ -78,7 +76,8 @@ local geo_curr = {
     ox = obj.ox,
     oy = obj.oy,
     rz = obj.rz,
-    zoom = obj.zoom
+    zoom = obj.zoom,
+    frame = obj.frame
 }
 
 local xform_curr = {
@@ -117,8 +116,7 @@ else
 end
 
 local lib = obj.module("ObjectMotionBlur_LK")
-local geo_data = obj.data("geo")
-local req_smp, smp, htm, drift, margin = lib.compute_motion(params, context, geo_data, geo_curr, xform_curr, xform_prev)
+local smp, htm, drift, margin = lib.compute_motion(params, context, obj.data("geo"), geo_curr, xform_curr, xform_prev)
 
 if (resize) then
     obj.effect("領域拡張", "上", margin.top, "下", margin.bottom, "左", margin.left, "右", margin.right)
@@ -131,19 +129,10 @@ if (smp > 0) then
         htm[1], htm[2], htm[3], 0.0,
         htm[4], htm[5], htm[6], 0.0,
         htm[7], htm[8], htm[9], 0.0,
-        drift.x, drift.y,
+        drift[1], drift[2],
         obj.w, obj.h,
         obj.w * 0.5 + obj.cx, obj.h * 0.5 + obj.cy,
         smp,
         mix
     }, "copy", "clip")
-end
-
-if (print_info) then
-    debug_print(string.format([[
-        [INFO]
-        Object ID       : %d
-        Index           : %d
-        Required Samples: %d
-    ]], obj.id, obj.index, req_smp))
 end

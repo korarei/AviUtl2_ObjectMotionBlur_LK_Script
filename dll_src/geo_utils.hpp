@@ -15,114 +15,115 @@ public:
     constexpr GeoMap() noexcept = default;
     constexpr ~GeoMap() noexcept = default;
 
-    constexpr void resize(std::size_t hash, std::size_t idx, std::size_t num, std::uint32_t mode) {
-        if (mode == 0u) {
-            clear(hash);
+    constexpr void resize(int id, int idx, int num, int mode) {
+        if (mode == 0) {
+            clear(id);
             return;
         }
 
-        auto &list = map[hash];
-        std::size_t size = list.size();
+        auto &chunk = storage[id];
+        std::size_t size = chunk.size();
 
         if (num < size) {
-            std::vector<BlockMap> temp(list.begin(), list.begin() + num);
-            list.swap(temp);
+            std::vector<Block> temp(chunk.begin(), chunk.begin() + num);
+            chunk.swap(temp);
         } else if (num > size) {
-            list.resize(num);
+            chunk.resize(num);
         }
 
-        auto &block_map = list.at(idx);
+        auto &block = chunk.at(idx);
 
-        if (mode == 1u || block_map.size() == 1)
+        if (mode == 1 || block.size() == 1)
             return;
 
-        if (auto it = block_map.find(0); it != block_map.end()) {
-            auto node = block_map.extract(it);
-            BlockMap{}.swap(block_map);
-            block_map.insert(std::move(node));
+        if (auto it = block.find(0); it != block.end()) {
+            auto node = block.extract(it);
+            Block{}.swap(block);
+            block.insert(std::move(node));
         }
     }
 
-    constexpr void write(std::size_t hash, std::size_t idx, std::size_t pos, const Geo &geo) noexcept {
-        const auto [id, offset] = calc_block_pos(pos);
+    constexpr void write(int id, int idx, int pos, const Geo &geo) noexcept {
+        const auto [key, offset] = decode(pos);
 
-        auto it_hash = map.find(hash);
-        if (it_hash == map.end())
+        auto it = storage.find(id);
+        if (it == storage.end())
             return;
 
-        auto &list = it_hash->second;
-        if (idx >= list.size())
+        auto &chunk = it->second;
+        if (idx >= chunk.size())
             return;
 
-        auto &block = list[idx][id];
+        auto &unit = chunk[idx][key];
 
-        if (block[offset].is_cached(geo))
+        if (unit[offset].is_cached(geo))
             return;
 
-        block[offset] = geo;
+        unit[offset] = geo;
     }
 
-    constexpr void overwrite(std::size_t hash, std::size_t idx, std::size_t pos, const Geo &geo) noexcept {
-        const auto [id, offset] = calc_block_pos(pos);
+    constexpr void overwrite(int id, int idx, int pos, const Geo &geo) noexcept {
+        const auto [key, offset] = decode(pos);
 
-        auto it_hash = map.find(hash);
-        if (it_hash == map.end())
+        auto it = storage.find(id);
+        if (it == storage.end())
             return;
 
-        auto &list = it_hash->second;
-        if (idx >= list.size())
+        auto &chunk = it->second;
+        if (idx >= chunk.size())
             return;
 
-        auto &block = list[idx][id];
+        auto &unit = chunk[idx][key];
 
-        block[offset] = geo;
+        unit[offset] = geo;
     }
 
-    [[nodiscard]] constexpr const Geo *read(std::size_t hash, std::size_t idx, std::size_t pos) const noexcept {
-        const auto [id, offset] = calc_block_pos(pos);
+    [[nodiscard]] constexpr const Geo *read(int id, int idx, int pos) const noexcept {
+        const auto [key, offset] = decode(pos);
 
-        if (auto block = get_block(hash, idx, id); block && (*block)[offset].is_valid())
-            return &(*block)[offset];
+        if (auto unit = fetch(id, idx, key); unit && (*unit)[offset].is_valid())
+            return &(*unit)[offset];
         else
             return nullptr;
     }
 
-    constexpr void clear() noexcept { MapData{}.swap(map); }
+    constexpr void clear() noexcept { Storage{}.swap(storage); }
 
-    constexpr void clear(std::size_t hash) noexcept {
-        auto it_hash = map.find(hash);
-        if (it_hash == map.end())
+    constexpr void clear(int id) noexcept {
+        auto it_id = storage.find(id);
+        if (it_id == storage.end())
             return;
 
-        auto &list = it_hash->second;
-        std::vector<BlockMap>{}.swap(list);
-        map.erase(hash);
+        auto &chunk = it_id->second;
+        std::vector<Block>{}.swap(chunk);
+        storage.erase(id);
     }
 
 private:
-    using Block = std::array<Geo, N>;
-    using BlockMap = std::map<std::size_t, Block>;
-    using MapData = std::unordered_map<std::size_t, std::vector<BlockMap>>;
-    MapData map{};
+    using Unit = std::array<Geo, N>;
+    using Block = std::map<int, Unit>;
+    using Storage = std::unordered_map<int, std::vector<Block>>;
+    Storage storage{};
 
-    [[nodiscard]] constexpr std::array<std::size_t, 2> calc_block_pos(std::size_t v) const noexcept {
-        return {v / N, v % N};
+    [[nodiscard]] constexpr std::array<int, 2> decode(int pos) const noexcept {
+        const int size = static_cast<int>(N);
+        return {pos / size, pos % size};
     }
 
-    [[nodiscard]] constexpr const Block *get_block(std::size_t hash, std::size_t idx, std::size_t id) const noexcept {
-        auto it_hash = map.find(hash);
-        if (it_hash == map.end())
+    [[nodiscard]] constexpr const Unit *fetch(int id, int idx, int key) const noexcept {
+        auto it_id = storage.find(id);
+        if (it_id == storage.end())
             return nullptr;
 
-        auto &list = it_hash->second;
-        if (idx >= list.size())
+        auto &chunk = it_id->second;
+        if (idx >= chunk.size())
             return nullptr;
 
-        auto &block_map = list[idx];
-        auto it_block = block_map.find(id);
-        if (it_block == block_map.end())
+        auto &block = chunk[idx];
+        auto it_key = block.find(key);
+        if (it_key == block.end())
             return nullptr;
 
-        return &it_block->second;
+        return &it_key->second;
     }
 };

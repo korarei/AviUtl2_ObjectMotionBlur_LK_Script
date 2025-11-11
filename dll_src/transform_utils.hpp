@@ -10,8 +10,6 @@
 #include "vector_2d.hpp"
 #include "vector_3d.hpp"
 
-#define ZOOM_MIN 1.0e-4
-
 class Geo {
 public:
     constexpr Geo() noexcept : data{}, frame(0), flag(false) {}
@@ -39,11 +37,6 @@ public:
         return result;
     }
 
-    [[nodiscard]] constexpr Vec2<double> get_center() const noexcept { return Vec2<double>(data[0], data[1]); }
-    [[nodiscard]] constexpr Vec2<double> get_pos() const noexcept { return Vec2<double>(data[2], data[3]); }
-    [[nodiscard]] constexpr double get_rot() const noexcept { return to_rad(data[4]); }
-    [[nodiscard]] constexpr double get_zoom() const noexcept { return std::max(data[5], ZOOM_MIN); }
-
     [[nodiscard]] constexpr bool is_cached(const Geo &geo) const noexcept {
         return flag == geo.flag && frame == geo.frame;
     }
@@ -60,15 +53,15 @@ class Transform {
 public:
     constexpr Transform() noexcept : data{} {}
     constexpr Transform(double cx, double cy, double x, double y, double rz, double zoom) noexcept :
-        data{cx, cy, x, y, rz, zoom} {}
+        data{cx, cy, x, y, rz, zoom * 0.01} {}
 
     [[nodiscard]] constexpr double &operator[](std::size_t i) noexcept { return data[i]; }
     [[nodiscard]] constexpr const double &operator[](std::size_t i) const noexcept { return data[i]; }
 
-    [[nodiscard]] constexpr Vec2<double> get_center() const noexcept { return Vec2<double>(data[0], data[1]); }
-    [[nodiscard]] constexpr Vec2<double> get_pos() const noexcept { return Vec2<double>(data[2], data[3]); }
-    [[nodiscard]] constexpr double get_rot() const noexcept { return to_rad(data[4]); }
-    [[nodiscard]] constexpr double get_zoom() const noexcept { return std::max(data[5], ZOOM_MIN); }
+    [[nodiscard]] constexpr Vec2<double> center() const noexcept { return Vec2<double>(data[0], data[1]); }
+    [[nodiscard]] constexpr Vec2<double> position() const noexcept { return Vec2<double>(data[2], data[3]); }
+    [[nodiscard]] constexpr double rotation() const noexcept { return to_rad(data[4]); }
+    [[nodiscard]] constexpr double scale() const noexcept { return std::max(data[5], eps); }
 
     constexpr void set_geo(const Geo &geo) noexcept {
         for (std::size_t i = 0; i < 5; ++i) data[i] += geo[i];
@@ -76,33 +69,28 @@ public:
     }
 
 private:
+    static constexpr double eps = 1.0e-4;
     std::array<double, 6> data;
 };
 
 class Delta {
 public:
-    // Constructors.
+    struct Motion {
+        Mat3<double> htm;  // Homogeneous Transformation Matrix
+        Vec2<double> drift;
+
+        constexpr Motion() noexcept : htm(Mat3<double>::identity()), drift{} {}
+        constexpr Motion(const Mat3<double> &m, const Vec2<double> &v) noexcept : htm(m), drift(v) {}
+    };
+
     Delta(const Transform &from, const Transform &to) noexcept;
 
-    // Getters.
-    [[nodiscard]] constexpr const double get_rot() const noexcept { return rel_rot; }
-    [[nodiscard]] constexpr const double get_scale() const noexcept { return rel_scale; }
-    [[nodiscard]] constexpr const Vec2<double> &get_pos() const noexcept { return rel_pos; }
     [[nodiscard]] constexpr const bool is_moved() const noexcept { return !flag; }
 
-    // Calculate the HTM (Homogeneous Transformation Matrix).
-    [[nodiscard]] Mat3<double> calc_htm(double amt = 1.0, int smp = 1, bool is_inv = false) const noexcept;
-
-    [[nodiscard]] constexpr Vec2<double> calc_drift(double amt = 1.0, int smp = 1) const noexcept;
+    [[nodiscard]] Motion compute_motion(double amt, int smp = 1, bool invert = false) const noexcept;
 
 private:
-    double rel_rot, rel_scale;
-    Vec2<double> rel_pos, rel_center;
+    double rot, scale;
+    Vec2<double> pos, center;
     bool flag;
 };
-
-inline constexpr Vec2<double>
-Delta::calc_drift(double amt, int smp) const noexcept {
-    double step_amt = smp > 1 ? amt / static_cast<double>(smp) : amt;
-    return rel_center * step_amt;
-}
