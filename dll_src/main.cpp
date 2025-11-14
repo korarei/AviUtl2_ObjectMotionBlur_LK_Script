@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <array>
-#include <cstddef>
 #include <format>
 #include <string>
 
@@ -65,10 +64,9 @@ static Mat2<double>
 resize(const Context &context, const Delta &delta, double amt) noexcept {
     Mat2<double> margin{};
 
-    const double h_amt = amt * 0.5;
-    std::array<Delta::Motion, 2> data{delta.compute_motion(h_amt), delta.compute_motion(amt)};
+    std::array<Delta::Motion, 2> data{delta.compute_motion(amt * 0.5), delta.compute_motion(amt)};
 
-    for (std::size_t i = 0; i < 2; ++i) {
+    for (int i = 0; i < 2; ++i) {
         auto c_prev = Vec3<double>(-context.pivot + data[i].drift, 1.0);
         auto pos = (data[i].htm * c_prev).to_vec2() + context.pivot;
         auto bbox = (data[i].htm.to_mat2().abs()) * context.res;

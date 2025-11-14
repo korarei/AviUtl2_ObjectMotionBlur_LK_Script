@@ -1,11 +1,7 @@
 #pragma once
 
-#define _USE_MATH_DEFINES
+#include <numbers>
 #include <cmath>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 inline bool
 is_zero(double val) {
@@ -16,5 +12,5 @@ is_zero(double val) {
 inline constexpr double
 to_rad(double deg) {
     constexpr double r180 = 1.0 / 180.0;
-    return deg * M_PI * r180;
+    return deg * std::numbers::pi * r180;
 }

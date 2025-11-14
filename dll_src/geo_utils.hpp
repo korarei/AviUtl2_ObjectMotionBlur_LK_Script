@@ -44,7 +44,7 @@ public:
     }
 
     constexpr void write(int id, int idx, int pos, const Geo &geo) noexcept {
-        const auto [key, offset] = decode(pos);
+        const auto [key, offset] = split_pos(pos);
 
         auto it = storage.find(id);
         if (it == storage.end())
@@ -63,7 +63,7 @@ public:
     }
 
     constexpr void overwrite(int id, int idx, int pos, const Geo &geo) noexcept {
-        const auto [key, offset] = decode(pos);
+        const auto [key, offset] = split_pos(pos);
 
         auto it = storage.find(id);
         if (it == storage.end())
@@ -79,7 +79,7 @@ public:
     }
 
     [[nodiscard]] constexpr const Geo *read(int id, int idx, int pos) const noexcept {
-        const auto [key, offset] = decode(pos);
+        const auto [key, offset] = split_pos(pos);
 
         if (auto unit = fetch(id, idx, key); unit && (*unit)[offset].is_valid())
             return &(*unit)[offset];
@@ -90,11 +90,11 @@ public:
     constexpr void clear() noexcept { Storage{}.swap(storage); }
 
     constexpr void clear(int id) noexcept {
-        auto it_id = storage.find(id);
-        if (it_id == storage.end())
+        auto it = storage.find(id);
+        if (it == storage.end())
             return;
 
-        auto &chunk = it_id->second;
+        auto &chunk = it->second;
         std::vector<Block>{}.swap(chunk);
         storage.erase(id);
     }
@@ -105,7 +105,7 @@ private:
     using Storage = std::unordered_map<int, std::vector<Block>>;
     Storage storage{};
 
-    [[nodiscard]] constexpr std::array<int, 2> decode(int pos) const noexcept {
+    [[nodiscard]] constexpr std::array<int, 2> split_pos(int pos) const noexcept {
         const int size = static_cast<int>(N);
         return {pos / size, pos % size};
     }
