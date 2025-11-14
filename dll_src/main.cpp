@@ -1,70 +1,77 @@
 #include <algorithm>
 #include <array>
-#include <cstdint>
 #include <format>
 #include <string>
 
-#include <lua.hpp>
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
-#include "geo_utils.hpp"
-#include "lua_func.hpp"
+#include <logger2.h>
+#include <module2.h>
+
+#include "geo.hpp"
 #include "structs.hpp"
+#include "transform.hpp"
+
+#ifndef VERSION
+#define VERSION L"0.1.0"
+#endif
 
 static auto geo_map = GeoMap<8>();
+static LOG_HANDLE *logger;
 
 static void
-set_init_geo(std::uint32_t ext, const Input input) noexcept {
-    int flag = 1;
-    std::array<Geo, 2> geos{};
-
-    for (std::size_t i = 0; i < ext; ++i) {
-        if (auto g = geo_map.read(input.obj_id, input.obj_idx, i + 2))
-            geos[i] = *g;
-        else
-            flag = 0;
-    }
-
-    if (!flag)
+extrapolate(const Param &param, const Context &context, Flow &flow) noexcept {
+    if (!(param.ext && param.geo_cache)) {
+        flow.geo.prev = flow.geo.curr;
         return;
+    }
 
-    switch (ext) {
-        case 1u:
-            geo_map.overwrite(input.obj_id, input.obj_idx, 0, input.geo_curr * 2.0f - geos[0]);
-            return;
-        case 2u:
-            geo_map.overwrite(input.obj_id, input.obj_idx, 0, input.geo_curr * 3.0f - geos[0] * 3.0f + geos[1]);
-            return;
-        default:
-            return;
+    bool valid = true;
+    std::array<const Geo *, 2> geos{};
+
+    for (int i = 0; i < param.ext; ++i) {
+        if (auto g = geo_map.read(context.id, context.idx, i + 1))
+            geos[i] = g;
+        else
+            valid = false;
+    }
+
+    if (valid) {
+        switch (param.ext) {
+            case 1:
+                flow.write_data(*flow.geo.curr * 2.0 - *geos[0]);
+                return;
+            case 2:
+                flow.write_data(*flow.geo.curr * 3.0 - *geos[0] * 3.0 + *geos[1]);
+                return;
+        }
+    } else if (!flow.geo.prev->is_valid()) {
+        flow.geo.prev = flow.geo.curr;
     }
 }
 
-static Delta
-calc_delta(const Param &param, Input &input, std::size_t pos) noexcept {
-    input.tf_curr.set_geo(input.geo_curr);
-
-    if (auto geo = param.geo_cache ? geo_map.read(input.obj_id, input.obj_idx, pos) : nullptr)
-        input.tf_prev.set_geo(*geo);
+static void
+read_geo(const Param &param, const Context &context, Flow &flow, int pos) noexcept {
+    if (auto geo_prev = param.geo_cache ? geo_map.read(context.id, context.idx, pos) : nullptr)
+        flow.geo.prev = geo_prev;
     else
-        input.tf_prev.set_geo(input.geo_curr);
-
-    return Delta(input.tf_curr, input.tf_prev);
+        flow.geo.prev = flow.geo.curr;
 }
 
-static std::array<Vec2<float>, 2>
-calc_size(Delta &delta, float amt, const Input &input) noexcept {
-    std::array<Vec2<float>, 2> margin{};
+static Mat2<double>
+resize(const Context &context, const Delta &delta, double amt) noexcept {
+    Mat2<double> margin{};
 
-    const float h_amt = amt * 0.5f;
-    std::array<Mat3<float>, 2> htm_data{delta.calc_htm(h_amt), delta.calc_htm(amt)};
-    std::array<Vec2<float>, 2> drift_data{delta.calc_drift(h_amt), delta.calc_drift(amt)};
+    std::array<Delta::Motion, 2> data{delta.compute_motion(amt * 0.5), delta.compute_motion(amt)};
 
-    for (std::size_t i = 0; i < 2; ++i) {
-        auto c_prev = Vec3<float>(-input.pivot + drift_data[i], 1.0f);
-        auto pos = (htm_data[i] * c_prev).to_vec2() + input.pivot;
-        auto bbox = (htm_data[i].to_mat2().abs()) * input.res;
+    for (int i = 0; i < 2; ++i) {
+        auto c_prev = Vec3<double>(-context.pivot + data[i].drift, 1.0);
+        auto pos = (data[i].htm * c_prev).to_vec2() + context.pivot;
+        auto bbox = (data[i].htm.to_mat2().abs()) * context.res;
 
-        auto diff = (bbox - input.res) * 0.5f;
+        auto diff = (bbox - context.res) * 0.5;
         margin[0] = margin[0].max((diff - pos).ceil());
         margin[1] = margin[1].max((diff + pos).ceil());
     }
@@ -73,119 +80,148 @@ calc_size(Delta &delta, float amt, const Input &input) noexcept {
 }
 
 static void
-cleanup_geo(const Param &param, const Input &input) {
-    if (!input.is_last[0])
+cleanup_geo(const Param &param, const Context &context) {
+    if (context.idx != context.num - 1)
         return;
 
     switch (param.cache_ctrl) {
         case 1:
-            if (input.is_last[1])
-                geo_map.clear(input.obj_id);
+            if (context.frame != context.range - 1)
+                geo_map.clear(context.id);
             return;
         case 2:
             geo_map.clear();
             return;
         case 3:
-            geo_map.clear(input.obj_id);
+            geo_map.clear(context.id);
             return;
         default:
             return;
     }
 }
 
-int
-process_motion_blur(lua_State *L) {
-    try {
-        constexpr std::size_t prev_pos = 7;
+static Param
+load_param(SCRIPT_MODULE_PARAM *p, int idx) {
+    auto to_num = [&](const char *key) { return p->get_param_table_double(idx, key); };
+    auto to_int = [&](const char *key) { return p->get_param_table_int(idx, key); };
+    auto to_bool = [&](const char *key) { return p->get_param_table_boolean(idx, key); };
 
-        Obj obj(L);
-        const auto param = obj.get_param();
-        auto input = obj.get_input(param.ext);
-
-        if (input.obj_idx >= input.obj_num)
-            return 0;
-
-        const bool on = param.is_valid && (param.ext || input.frame);
-        const bool save_ed = param.geo_cache == 2u;
-        const bool save_st = param.geo_cache == 1u || (save_ed && (input.frame - 1) < param.ext);
-        std::uint32_t req_smp = 0u;
-
-        geo_map.resize(input.obj_id, input.obj_idx, input.obj_num, param.geo_cache);
-
-        if (save_st)
-            geo_map.overwrite(input.obj_id, input.obj_idx, input.frame + 1, input.geo_curr);
-
-        if (on) {
-            const float amt = param.shutter_angle / 360.0f;
-
-            std::array<Vec2<float>, 2> margin{};
-            Vec2<float> delta_res{};
-            std::uint32_t smp = 0u;
-
-            if (param.geo_cache && !input.frame)
-                set_init_geo(param.ext, input);
-
-            auto delta = calc_delta(param, input, (save_ed && input.frame) ? prev_pos : input.frame);
-
-            if (delta.is_moved()) {
-                margin = calc_size(delta, amt, input);
-                delta_res = margin[0] + margin[1];
-                req_smp = static_cast<std::uint32_t>(delta_res.norm(2));
-                smp = std::min(req_smp, param.smp_lim - 1u);
-            }
-
-            if (smp) {
-                auto init_htm = delta.calc_htm(amt, smp, true);
-                auto drift = delta.calc_drift(amt, smp);
-
-                Vec2<float> res_new = input.res;
-                Vec2<float> pivot_new = input.pivot;
-                if (param.resize) {
-                    auto c_new = input.geo_curr.get_center() + (margin[0] - margin[1]) * 0.5f;
-                    obj.resize(margin, c_new);
-                    pivot_new = input.tf_curr.get_center() + c_new;
-                    res_new += delta_res;
-                }
-
-                Vec2<float> ps_pivot = res_new * 0.5f + pivot_new;
-                std::vector<float> constants = {
-                        init_htm(0, 0),   init_htm(0, 1),   init_htm(0, 2),          0.0f,
-                        init_htm(1, 0),   init_htm(1, 1),   init_htm(1, 2),          0.0f,
-                        init_htm(2, 0),   init_htm(2, 1),   init_htm(2, 2),          0.0f,
-                        drift.get_x(),    drift.get_y(),    res_new.get_x(),         res_new.get_y(),
-                        ps_pivot.get_x(), ps_pivot.get_y(), static_cast<float>(smp), param.mix};
-
-                obj.pixel_shader(param.shader_name, constants);
-            }
-        }
-
-        if (save_ed)
-            geo_map.write(input.obj_id, input.obj_idx, prev_pos, input.geo_curr);
-
-        cleanup_geo(param, input);
-
-        if (param.print_info) {
-            std::string info = std::format(
-                    "[INFO]\n"
-                    "Object ID       : {}\n"
-                    "Index           : {}\n"
-                    "Required Samples: {}",
-                    input.obj_id, input.obj_idx, req_smp + 1u);
-            obj.print(info);
-        }
-
-        return 0;
-    } catch (const std::exception &e) {
-        return luaL_error(L, "Runtime Error: %s", e.what());
-    } catch (...) {
-        return luaL_error(L, "Unknown Exception occurred");
-    }
+    return {to_num("amt"),       to_int("smp_lim"),    to_int("ext"),
+            to_int("geo_cache"), to_int("cache_ctrl"), to_bool("print_info")};
 }
 
-static luaL_Reg functions[] = {{"process_motion_blur", process_motion_blur}, {nullptr, nullptr}};
+static Context
+load_context(SCRIPT_MODULE_PARAM *p, int idx) {
+    auto to_num = [&](const char *key) { return p->get_param_table_double(idx, key); };
+    auto to_int = [&](const char *key) { return p->get_param_table_int(idx, key); };
 
-extern "C" int
-luaopen_ObjectMotionBlur_LK(lua_State *L) {
-    luaL_register(L, "ObjectMotionBlur_LK", functions);
-    return 1;
+    return Context(to_num("w"), to_num("h"), to_num("cx"), to_num("cy"), to_int("id"), to_int("idx"), to_int("num"),
+                   to_int("frame"), to_int("range"));
+}
+
+static Flow
+load_flow(SCRIPT_MODULE_PARAM *p, int idx) {
+    auto to_num = [&](const char *key, int ofs = 0) { return p->get_param_table_double(idx + ofs, key); };
+    auto to_int = [&](const char *key, int ofs = 0) { return p->get_param_table_int(idx + ofs, key); };
+    auto to_data = [&]() { return reinterpret_cast<Geo *>(p->get_param_data(idx)); };
+
+    return Flow(to_data(),
+                Geo(to_num("cx", 1), to_num("cy", 1), to_num("ox", 1), to_num("oy", 1), to_num("rz", 1),
+                    to_num("zoom", 1), to_int("frame", 1)),
+                Transform(to_num("cx", 2), to_num("cy", 2), to_num("x", 2), to_num("y", 2), to_num("rz", 2),
+                          to_num("zoom", 2)),
+                Transform(to_num("cx", 3), to_num("cy", 3), to_num("x", 3), to_num("y", 3), to_num("rz", 3),
+                          to_num("zoom", 3)));
+}
+
+void
+compute_motion(SCRIPT_MODULE_PARAM *p) {
+    const int n = p->get_param_num();
+    if (n != 6) {
+        p->set_error("Incorrect number of arguments");
+        return;
+    }
+
+    const Param param = load_param(p, 0);
+    const Context context = load_context(p, 1);
+    Flow flow = load_flow(p, 2);
+
+    const bool save_ed = param.geo_cache == 2;
+    const bool save_st = param.geo_cache == 1 || (save_ed && (context.frame == 1 || context.frame == 2));
+
+    int req_smp = 0;
+    int smp = 0;
+    Delta::Motion motion{};
+    Mat2<double> margin{};
+
+    geo_map.resize(context.id, context.idx, context.num, param.geo_cache);
+
+    if (save_st)
+        geo_map.overwrite(context.id, context.idx, context.frame, *flow.geo.curr);
+
+    if (context.frame)
+        read_geo(param, context, flow, save_ed ? 0 : context.frame - 1);
+    else
+        extrapolate(param, context, flow);
+
+    const auto delta = flow.delta();
+
+    if (delta.is_moved()) {
+        margin = resize(context, delta, param.amt);
+        req_smp = static_cast<int>(std::ceil((margin[0] + margin[1]).norm(2)));
+        smp = std::min(req_smp, param.smp_lim - 1);
+    }
+
+    if (smp)
+        motion = delta.compute_motion(param.amt, smp, true);
+
+    if (save_ed)
+        geo_map.write(context.id, context.idx, 0, *flow.geo.curr);
+
+    cleanup_geo(param, context);
+
+    if (param.print_info) {
+        std::wstring info = std::format(
+                L"\n"
+                L"Object ID       : {}\n"
+                L"Index           : {}\n"
+                L"Required Samples: {}",
+                context.id, context.idx, req_smp + 1);
+
+        std::wstring verbose = std::format(
+                L"\n"
+                L"Size of Geo class: {} bytes",
+                sizeof(Geo));
+
+        logger->info(logger, info.c_str());
+        logger->verbose(logger, verbose.c_str());
+    }
+
+    LPCSTR keys[] = {"left", "top", "right", "bottom"};
+    p->push_result_int(smp);
+    p->push_result_array_double(motion.htm.ptr(), static_cast<int>(motion.htm.size()));
+    p->push_result_array_double(motion.drift.ptr(), static_cast<int>(motion.drift.size()));
+    p->push_result_table_double(keys, margin.ptr(), static_cast<int>(margin.size()));
+}
+
+static SCRIPT_MODULE_FUNCTION functions[] = {{L"compute_motion", compute_motion}, {nullptr}};
+
+static SCRIPT_MODULE_TABLE script_module_table = {L"ObjectMotionBlur_LK v" VERSION L" by Korarei", functions};
+
+extern "C" SCRIPT_MODULE_TABLE *
+GetScriptModuleTable() {
+    return &script_module_table;
+}
+
+extern "C" void
+InitializeLogger(LOG_HANDLE *l) {
+    logger = l;
+}
+
+extern "C" bool
+InitializePlugin(DWORD v) {
+    if (v < 2001901)
+        return false;
+    else
+        return true;
 }
