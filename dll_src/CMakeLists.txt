@@ -10,7 +10,7 @@ set(SDK_DIR "${CMAKE_SOURCE_DIR}/aviutl2_sdk")
 add_library(${PROJECT_NAME} SHARED
     main.def
     main.cpp
-    transform_utils.cpp
+    transform.cpp
 )
 
 # Include directories.

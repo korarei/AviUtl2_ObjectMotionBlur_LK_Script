@@ -10,9 +10,9 @@
 #include <logger2.h>
 #include <module2.h>
 
-#include "geo_utils.hpp"
+#include "geo.hpp"
 #include "structs.hpp"
-#include "transform_utils.hpp"
+#include "transform.hpp"
 
 #ifndef VERSION
 #define VERSION L"0.1.0"
