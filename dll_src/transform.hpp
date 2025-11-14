@@ -7,8 +7,7 @@
 #include <cstdint>
 
 #include "utils.hpp"
-#include "vector_2d.hpp"
-#include "vector_3d.hpp"
+#include "vector/vector.hpp"
 
 class Geo {
 public:

@@ -5,7 +5,7 @@
 #include <ostream>
 #include <stdexcept>
 
-#include "vector_base.hpp"
+#include "base.hpp"
 
 // Define a 2D vector class template.
 template <vec_base::Arithmetic T>

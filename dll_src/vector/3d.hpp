@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vector_2d.hpp"
+#include "2d.hpp"
 
 template <vec_base::Arithmetic T>
 class Vec3 : public vec_base::VecBase<Vec3<T>, 3, T> {
