@@ -25,7 +25,14 @@ public:
     [[nodiscard]] constexpr const T &y() const noexcept { return this->vec[1]; }
     [[nodiscard]] constexpr const T &z() const noexcept { return this->vec[2]; }
 
-    [[nodiscard]] constexpr Vec2<T> to_vec2() const noexcept { return Vec2<T>(this->vec[0], this->vec[1]); }
+    [[nodiscard]] constexpr Vec2<T> to_vec2() const noexcept { return Vec2(this->vec[0], this->vec[1]); }
+
+    [[nodiscard]] constexpr Vec3 cross(const Vec3 &v) const noexcept {
+        const T vx = y() * v.z() - z() * v.y();
+        const T vy = z() * v.x() - x() * v.z();
+        const T vz = x() * v.y() - y() * v.x();
+        return Vec3(vx, vy, vz);
+    }
 
 private:
     using Super = vector::Vec<Vec3<T>, 3, T>;
@@ -46,7 +53,7 @@ public:
         Super(Vec3(m[0]), Vec3(m[1]), t) {}
 
     [[nodiscard]] constexpr Mat2<T> to_mat2() const noexcept {
-        return Mat2<T>(this->cols[0].to_vec2(), this->cols[1].to_vec2());
+        return Mat2(this->cols[0].to_vec2(), this->cols[1].to_vec2());
     }
 
     [[nodiscard]] static constexpr Mat3 rotation(T theta, T scale = T(1), int axis = 2) {
@@ -79,7 +86,7 @@ template <std::floating_point T>
 class Diag3 : public vector::Diag<Vec3<T>, Mat3<T>, Diag3<T>, 2, T> {
 public:
     constexpr Diag3() noexcept : Super() {}
-    explicit constexpr Diag3(T s) noexcept: Super(s, s, s) {}
+    explicit constexpr Diag3(T s) noexcept : Super(s, s, s) {}
     constexpr Diag3(T sx, T sy, T sz) noexcept : Super(sx, sy, sz) {}
     explicit constexpr Diag3(const Vec3<T> &v) noexcept : Super(v.x(), v.y(), v.z()) {}
 
