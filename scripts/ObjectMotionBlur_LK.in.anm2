@@ -71,13 +71,13 @@ local context = {
 }
 
 local geo_curr = {
+    frame = obj.frame,
     cx = obj.cx,
     cy = obj.cy,
     ox = obj.ox,
     oy = obj.oy,
     rz = obj.rz,
-    zoom = obj.zoom,
-    frame = obj.frame
+    zoom = obj.zoom
 }
 
 local xform_curr = {
@@ -116,7 +116,8 @@ else
 end
 
 local lib = obj.module("ObjectMotionBlur_LK")
-local smp, htm, drift, margin = lib.compute_motion(params, context, obj.data("geo"), geo_curr, xform_curr, xform_prev)
+local geo_data = obj.data("geo")
+local smp, xform, scale, offset, margin = lib.compute_motion(params, context, geo_data, geo_curr, xform_curr, xform_prev)
 
 if (resize) then
     obj.effect("領域拡張", "上", margin.top, "下", margin.bottom, "左", margin.left, "右", margin.right)
@@ -126,12 +127,15 @@ end
 
 if (smp > 0) then
     obj.pixelshader("motion_blur", "object", "object", {
-        htm[1], htm[2], htm[3], 0.0,
-        htm[4], htm[5], htm[6], 0.0,
-        htm[7], htm[8], htm[9], 0.0,
-        drift[1], drift[2],
+        xform[1], xform[2], xform[3], 0.0,
+        xform[4], xform[5], xform[6], 0.0,
+        xform[7], xform[8], xform[9], 0.0,
+        scale[1], scale[2], scale[3], 0.0,
+        scale[4], scale[5], scale[6], 0.0,
+        scale[7], scale[8], scale[9], 0.0,
+        offset[1], offset[2], offset[3], 0.0,
         obj.w, obj.h,
-        obj.w * 0.5 + obj.cx, obj.h * 0.5 + obj.cy,
+        obj.w * 0.5 + cx + obj.cx, obj.h * 0.5 + cy + obj.cy,
         smp,
         mix
     }, "copy", "clip")

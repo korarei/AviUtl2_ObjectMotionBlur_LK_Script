@@ -1,8 +1,9 @@
 Texture2D src : register(t0);
 SamplerState smp : register(s0);
 cbuffer params : register(b0) {
-    column_major float3x3 htm_base;
-    float2 drift;
+    column_major float3x3 xform_base;
+    column_major float3x3 scale;
+    float3 offset;
     float2 res;
     float2 pivot;
     float n;
@@ -14,21 +15,30 @@ struct PS_Input {
     float2 uv : TEXCOORD;
 };
 
+inline float2 to_uv(float3 pos, float2 texel) {
+    return (pos.xy + pivot) * texel;
+}
+
 float4 motion_blur(PS_Input input) : SV_Target {
-    const float2 texel = rcp(res);
     const uint count = uint(n);
+    const float2 texel = rcp(res);
 
     float3 pos = float3(mad(input.uv, res, -pivot), 1.0);
-    column_major float3x3 htm = htm_base;
-    column_major float3x3 pose = htm_base;
-    pose._m02_m12_m22 = float3(0.0, 0.0, 1.0);
+    float3 ofs = offset;
+    float3x3 scl = scale;
+    float3x3 xform = xform_base;
+    float3x3 pose = xform_base;
+    pose._13_23_33 = float3(0.0, 0.0, 1.0);
 
     float4 col = src.Load(int3(input.pos.xy, 0));
     for (uint i = 1; i <= count; ++i) {
-        pos = mul(htm, pos);
-        float2 coord = mad(drift, float2(i.xx), pos.xy + pivot) * texel;
-        col += src.Sample(smp, coord);
-        htm._m02_m12_m22 = mul(pose, htm._m02_m12_m22);
+        pos = mul(xform, pos);
+        float2 uv = to_uv(mul(scl, pos) + ofs, texel);
+        col += src.Sample(smp, uv);
+
+        ofs += offset;
+        scl = mul(scl, scale);
+        xform._13_23_33 = mul(pose, xform._13_23_33);
     }
 
     col = saturate(col * rcp(n + 1.0));

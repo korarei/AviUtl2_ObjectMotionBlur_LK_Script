@@ -303,6 +303,8 @@ public:
     [[nodiscard]] constexpr T &operator[](std::size_t i) noexcept { return diag[i]; }
     [[nodiscard]] constexpr const T &operator[](std::size_t i) const noexcept { return diag[i]; }
 
+    [[nodiscard]] static constexpr std::size_t size() noexcept { return N * N; }
+
     constexpr D_Derived &operator+=(const D_Derived &other) noexcept {
         for (std::size_t i = 0; i < N; ++i) diag[i] += other[i];
         return this->derived();
@@ -366,6 +368,12 @@ public:
                 result[j][i] = diag[i] * other[j][i];
             }
         }
+        return result;
+    }
+
+    [[nodiscard]] constexpr D_Derived operator-() const noexcept {
+        D_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = -diag[i];
         return result;
     }
 

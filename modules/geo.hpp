@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <map>
 #include <unordered_map>
 #include <vector>
@@ -106,7 +105,7 @@ private:
     Storage storage{};
 
     [[nodiscard]] constexpr std::array<int, 2> split_pos(int pos) const noexcept {
-        const int size = static_cast<int>(N);
+        constexpr int size = static_cast<int>(N);
         return {pos / size, pos % size};
     }
 

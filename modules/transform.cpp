@@ -1,27 +1,31 @@
 #include "transform.hpp"
 
-// Delta class.
 Delta::Delta(const Transform &from, const Transform &to) noexcept :
     rot(to.rotation() - from.rotation()),
-    scale(to.scale() / from.scale()),
-    pos((to.position() - from.position()).rotate(-from.rotation()) / from.scale()),
+    base(from.scale().inverse()),
+    scale(base * to.scale()),
+    pos(base * (to.position() - from.position()).rotate(-from.rotation())),
     center(from.center() - to.center()),
-    flag(is_zero(pos.norm(2)) && is_zero(center.norm(2)) && is_zero(scale - 1.0) && is_zero(rot)) {}
+    flag(is_zero(pos.norm(2)) && is_zero(center.norm(2)) && is_zero(scale.determinant() - 1.0) && is_zero(rot)) {}
 
 Delta::Motion
-Delta::compute_motion(double amt, int smp, bool invert) const noexcept {
-    const double step_amt = smp > 1 ? amt / static_cast<double>(smp) : amt;
-    const double step_rot = rot * step_amt;
-    const double step_scale = std::pow(scale, step_amt);
-    const auto step_pos = pos * step_amt;
+Delta::build_xform(double amt, int smp, bool inverse) const noexcept {
+    if (smp > 0) {
+        const double ratio = smp > 1 ? amt / static_cast<double>(smp) : amt;
+        const auto t = pos * ratio;
+        const auto r = rot * ratio;
+        const auto s = scale.pow(ratio);
 
-    if (invert) {
-        auto pose = Mat2<double>::rotation(-step_rot, 1.0 / step_scale);
-        auto trans = Vec3<double>(-(pose * step_pos), 1.0);
-        return Motion(Mat3<double>(pose, trans), -center * step_amt);
+        if (inverse) {
+            const auto pose = base * Mat2<double>::rotation(-r) * base.inverse();
+            const auto xform = Mat3<double>(pose, Vec3(-(pose * t), 1.0));
+            return {xform, Diag3(s.inverse(), 1.0), Vec3(center * -ratio)};
+        } else {
+            const auto pose = base * Mat2<double>::rotation(r) * base.inverse();
+            const auto xform = Mat3<double>(pose, Vec3(t, 1.0));
+            return {xform, Diag3<double>(s, 1.0), Vec3(center * ratio)};
+        }
     } else {
-        auto pose = Mat2<double>::rotation(step_rot, step_scale);
-        auto trans = Vec3<double>(step_pos, 1.0);
-        return Motion(Mat3<double>(pose, trans), center * step_amt);
+        return {Mat3<double>::identity(), Diag3<double>::identity(), Vec3<double>()};
     }
 }

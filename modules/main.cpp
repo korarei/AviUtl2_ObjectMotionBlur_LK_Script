@@ -64,12 +64,12 @@ static Mat2<double>
 resize(const Context &context, const Delta &delta, double amt) noexcept {
     Mat2<double> margin{};
 
-    std::array<Delta::Motion, 2> data{delta.compute_motion(amt * 0.5), delta.compute_motion(amt)};
-
+    std::array<Delta::Motion, 2> data{delta.build_xform(amt * 0.5), delta.build_xform(amt)};
     for (int i = 0; i < 2; ++i) {
-        auto c_prev = Vec3<double>(-context.pivot + data[i].drift, 1.0);
-        auto pos = (data[i].htm * c_prev).to_vec2() + context.pivot;
-        auto bbox = (data[i].htm.to_mat2().abs()) * context.res;
+        const auto xform = data[i].xform * data[i].scale;
+        auto c_prev = Vec3<double>(-context.pivot, 1.0) + data[i].offset;
+        auto pos = (xform * c_prev).to_vec2() + context.pivot;
+        auto bbox = (xform.to_mat2().abs()) * context.res;
 
         auto diff = (bbox - context.res) * 0.5;
         margin[0] = margin[0].max((diff - pos).ceil());
@@ -126,8 +126,8 @@ load_flow(SCRIPT_MODULE_PARAM *p, int idx) {
     auto to_data = [&]() { return reinterpret_cast<Geo *>(p->get_param_data(idx)); };
 
     return Flow(to_data(),
-                Geo(to_num("cx", 1), to_num("cy", 1), to_num("ox", 1), to_num("oy", 1), to_num("rz", 1),
-                    to_num("zoom", 1), to_int("frame", 1)),
+                Geo(to_int("frame", 1), to_num("cx", 1), to_num("cy", 1), to_num("ox", 1), to_num("oy", 1),
+                    to_num("rz", 1), to_num("zoom", 1)),
                 Transform(to_num("cx", 2), to_num("cy", 2), to_num("x", 2), to_num("y", 2), to_num("rz", 2),
                           to_num("zoom", 2)),
                 Transform(to_num("cx", 3), to_num("cy", 3), to_num("x", 3), to_num("y", 3), to_num("rz", 3),
@@ -151,7 +151,6 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
 
     int req_smp = 0;
     int smp = 0;
-    Delta::Motion motion{};
     Mat2<double> margin{};
 
     geo_map.resize(context.id, context.idx, context.num, param.geo_cache);
@@ -172,8 +171,7 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
         smp = std::min(req_smp, param.smp_lim - 1);
     }
 
-    if (smp)
-        motion = delta.compute_motion(param.amt, smp, true);
+    auto motion = delta.build_xform(param.amt, smp, true);
 
     if (save_ed)
         geo_map.write(context.id, context.idx, 0, *flow.geo.curr);
@@ -190,7 +188,7 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
 
         std::wstring verbose = std::format(
                 L"\n"
-                L"Size of Geo class: {} bytes",
+                L"Size of Geo class: {} B",
                 sizeof(Geo));
 
         logger->info(logger, info.c_str());
@@ -199,8 +197,9 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
 
     LPCSTR keys[] = {"left", "top", "right", "bottom"};
     p->push_result_int(smp);
-    p->push_result_array_double(motion.htm.data(), static_cast<int>(motion.htm.size()));
-    p->push_result_array_double(motion.drift.data(), static_cast<int>(motion.drift.size()));
+    p->push_result_array_double(motion.xform.data(), static_cast<int>(motion.xform.size()));
+    p->push_result_array_double(motion.scale.matrix().data(), static_cast<int>(motion.scale.size()));
+    p->push_result_array_double(motion.offset.data(), static_cast<int>(motion.offset.size()));
     p->push_result_table_double(keys, margin.data(), static_cast<int>(margin.size()));
 }
 

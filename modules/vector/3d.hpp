@@ -83,15 +83,16 @@ operator*(T scalar, const Mat3<T> &m) noexcept {
 }
 
 template <std::floating_point T>
-class Diag3 : public vector::Diag<Vec3<T>, Mat3<T>, Diag3<T>, 2, T> {
+class Diag3 : public vector::Diag<Vec3<T>, Mat3<T>, Diag3<T>, 3, T> {
 public:
     constexpr Diag3() noexcept : Super() {}
     explicit constexpr Diag3(T s) noexcept : Super(s, s, s) {}
     constexpr Diag3(T sx, T sy, T sz) noexcept : Super(sx, sy, sz) {}
     explicit constexpr Diag3(const Vec3<T> &v) noexcept : Super(v.x(), v.y(), v.z()) {}
+    explicit constexpr Diag3(const Diag2<T> &d, T sz = T(0)) noexcept : Super(d[0], d[1], sz) {}
 
 private:
-    using Super = vector::Diag<Vec3<T>, Mat3<T>, Diag3<T>, 2, T>;
+    using Super = vector::Diag<Vec3<T>, Mat3<T>, Diag3<T>, 3, T>;
 };
 
 template <std::floating_point T>

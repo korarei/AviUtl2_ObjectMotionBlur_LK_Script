@@ -1,9 +1,5 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
-#include <string>
-
 #include "transform.hpp"
 #include "vector/vector.hpp"
 
