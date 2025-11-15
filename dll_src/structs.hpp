@@ -5,7 +5,7 @@
 #include <string>
 
 #include "transform.hpp"
-#include "vector_2d.hpp"
+#include "vector/vector.hpp"
 
 struct Param {
     double amt;

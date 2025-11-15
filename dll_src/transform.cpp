@@ -4,7 +4,7 @@
 Delta::Delta(const Transform &from, const Transform &to) noexcept :
     rot(to.rotation() - from.rotation()),
     scale(to.scale() / from.scale()),
-    pos((to.position() - from.position()).rotate(-from.rotation(), 1.0 / from.scale())),
+    pos((to.position() - from.position()).rotate(-from.rotation()) / from.scale()),
     center(from.center() - to.center()),
     flag(is_zero(pos.norm(2)) && is_zero(center.norm(2)) && is_zero(scale - 1.0) && is_zero(rot)) {}
 

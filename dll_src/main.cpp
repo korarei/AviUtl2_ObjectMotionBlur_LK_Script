@@ -199,9 +199,9 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
 
     LPCSTR keys[] = {"left", "top", "right", "bottom"};
     p->push_result_int(smp);
-    p->push_result_array_double(motion.htm.ptr(), static_cast<int>(motion.htm.size()));
-    p->push_result_array_double(motion.drift.ptr(), static_cast<int>(motion.drift.size()));
-    p->push_result_table_double(keys, margin.ptr(), static_cast<int>(margin.size()));
+    p->push_result_array_double(motion.htm.data(), static_cast<int>(motion.htm.size()));
+    p->push_result_array_double(motion.drift.data(), static_cast<int>(motion.drift.size()));
+    p->push_result_table_double(keys, margin.data(), static_cast<int>(margin.size()));
 }
 
 static SCRIPT_MODULE_FUNCTION functions[] = {{L"compute_motion", compute_motion}, {nullptr}};
