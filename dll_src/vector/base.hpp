@@ -5,425 +5,402 @@
 #include <cmath>
 #include <concepts>
 #include <cstddef>
-#include <limits>
+#include <execution>
+#include <numeric>
 #include <ranges>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
 
-namespace vec_base {
-template <typename T>
-concept Arithmetic = std::integral<T> || std::floating_point<T>;
-
-// Vector class.
-template <typename Derived, std::size_t N, Arithmetic T>
-    requires(N > 0)
-class VecBase {
+namespace vector {
+template <typename V_Derived, std::size_t N, std::floating_point T>
+class Vec {
 public:
-    using Iterator = typename std::array<T, N>::iterator;
-    using ConstIterator = typename std::array<T, N>::const_iterator;
-
-    // Constructors.
-    constexpr VecBase() = default;
+    constexpr Vec() = default;
     template <typename... Args>
-    constexpr VecBase(Args &&...args) noexcept
-        requires(sizeof...(Args) == N && (std::is_same_v<T, std::decay_t<Args>> && ...))
-        : data{std::forward<Args>(args)...} {}
+        requires(sizeof...(Args) == N && (std::same_as<std::decay_t<Args>, T> && ...))
+    constexpr Vec(Args &&...args) noexcept : vec{std::forward<Args>(args)...} {}
 
-    // Element access.
-    [[nodiscard]] constexpr T &operator[](std::size_t i) noexcept { return data[i]; }
-    [[nodiscard]] constexpr const T &operator[](std::size_t i) const noexcept { return data[i]; }
+    [[nodiscard]] constexpr T &operator[](std::size_t i) noexcept { return vec[i]; }
+    [[nodiscard]] constexpr const T &operator[](std::size_t i) const noexcept { return vec[i]; }
 
-    // Iterator support.
-    [[nodiscard]] constexpr Iterator begin() noexcept { return data.begin(); }
-    [[nodiscard]] constexpr ConstIterator begin() const noexcept { return data.begin(); }
-    [[nodiscard]] constexpr ConstIterator cbegin() const noexcept { return data.cbegin(); }
-    [[nodiscard]] constexpr Iterator end() noexcept { return data.end(); }
-    [[nodiscard]] constexpr ConstIterator end() const noexcept { return data.end(); }
-    [[nodiscard]] constexpr ConstIterator cend() const noexcept { return data.cend(); }
+    [[nodiscard]] constexpr T *data() noexcept { return vec.data(); }
+    [[nodiscard]] constexpr const T *data() const noexcept { return vec.data(); }
 
-    // Data pointer access.
-    [[nodiscard]] constexpr T *ptr() noexcept { return data.data(); }
-    [[nodiscard]] constexpr const T *ptr() const noexcept { return data.data(); }
-
-    // Size and capacity.
     [[nodiscard]] static constexpr std::size_t size() noexcept { return N; }
 
-    // Assignment operators (return Derived&).
-    constexpr Derived &operator+=(const Derived &other) noexcept {
-        for (std::size_t i = 0; i < N; ++i) {
-            data[i] += other[i];
-        }
-        return derived();
-    }
-    constexpr Derived &operator-=(const Derived &other) noexcept {
-        for (std::size_t i = 0; i < N; ++i) {
-            data[i] -= other[i];
-        }
-        return derived();
-    }
-    constexpr Derived &operator*=(const T &scalar) noexcept {
-        for (auto &elem : data) {
-            elem *= scalar;
-        }
-        return derived();
-    }
-    constexpr Derived &operator/=(const T &scalar) {
-        if (is_zero(scalar))
-            throw std::invalid_argument("Division by zero in Vec.");
-
-        for (auto &elem : data) {
-            elem /= scalar;
-        }
-        return derived();
+    constexpr V_Derived &operator+=(const V_Derived &other) noexcept {
+        for (std::size_t i = 0; i < N; ++i) vec[i] += other[i];
+        return this->derived();
     }
 
-    // Arithmetic operators (return Derived).
-    [[nodiscard]] constexpr Derived operator+(const Derived &other) const noexcept {
-        Derived result = derived();
+    constexpr V_Derived &operator-=(const V_Derived &other) noexcept {
+        for (std::size_t i = 0; i < N; ++i) vec[i] -= other[i];
+        return this->derived();
+    }
+
+    constexpr V_Derived &operator*=(const T &scalar) noexcept {
+        for (auto &elem : vec) elem *= scalar;
+        return this->derived();
+    }
+
+    constexpr V_Derived &operator*=(const V_Derived &other) noexcept {
+        for (std::size_t i = 0; i < N; ++i) vec[i] *= other[i];
+        return this->derived();
+    }
+
+    constexpr V_Derived &operator/=(const T &scalar) {
+        for (auto &elem : vec) elem /= scalar;
+        return this->derived();
+    }
+
+    constexpr V_Derived &operator/=(const V_Derived &other) {
+        for (std::size_t i = 0; i < N; ++i) vec[i] /= other[i];
+        return this->derived();
+    }
+
+    [[nodiscard]] constexpr V_Derived operator+(const V_Derived &other) const noexcept {
+        V_Derived result = this->derived();
         result += other;
         return result;
     }
-    [[nodiscard]] constexpr Derived operator-(const Derived &other) const noexcept {
-        Derived result = derived();
+
+    [[nodiscard]] constexpr V_Derived operator-(const V_Derived &other) const noexcept {
+        V_Derived result = this->derived();
         result -= other;
         return result;
     }
-    [[nodiscard]] constexpr Derived operator*(const T &scalar) const noexcept {
-        Derived result = derived();
+
+    [[nodiscard]] constexpr V_Derived operator*(const T &scalar) const noexcept {
+        V_Derived result = this->derived();
         result *= scalar;
         return result;
     }
-    [[nodiscard]] constexpr Derived operator/(const T &scalar) const {
-        Derived result = derived();
+
+    [[nodiscard]] constexpr V_Derived operator*(const V_Derived &other) const noexcept {
+        V_Derived result = this->derived();
+        result *= other;
+        return result;
+    }
+
+    [[nodiscard]] constexpr V_Derived operator/(const T &scalar) const {
+        V_Derived result = this->derived();
         result /= scalar;
         return result;
     }
 
-    // Unary operators.
-    [[nodiscard]] constexpr Derived operator-() const noexcept {
-        Derived result;
-        for (std::size_t i = 0; i < N; ++i) {
-            result[i] = -data[i];
-        }
+    [[nodiscard]] constexpr V_Derived operator/(const V_Derived &other) const {
+        V_Derived result = this->derived();
+        result /= other;
         return result;
     }
 
-    // Comparison operators.
-    [[nodiscard]] constexpr bool operator==(const Derived &other) const noexcept {
-        return std::ranges::equal(data, other.data, [](const T &a, const T &b) { return are_equal(a, b); });
+    [[nodiscard]] constexpr V_Derived operator-() const noexcept {
+        V_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = -vec[i];
+        return result;
     }
 
-    [[nodiscard]] constexpr bool operator!=(const Derived &other) const noexcept { return !(*this == other); }
-
-    // Mathematical operations.
     [[nodiscard]] constexpr T norm(int ord = 2) const {
         switch (ord) {
             case 1: {
-                T sum = T{0};
-                for (const auto &val : data) {
-                    sum += std::abs(val);
-                }
+                T sum = T(0);
+                for (T v : vec) sum += std::abs(v);
                 return sum;
             }
             case 2: {
-                T sum = T{0};
-                for (const auto &val : data) {
-                    sum += val * val;
-                }
-                return calc_sqrt(sum);
+                T sum = T(0);
+                for (T v : vec) sum += v * v;
+                return std::sqrt(sum);
             }
-            case -1: {
-                T max_val = T{};
-                for (const auto &val : data) {
-                    max_val = std::max(max_val, std::abs(val));
-                }
-                return max_val;
-            }
+            case -1:
+                return std::ranges::max(vec | std::views::transform([](T v) { return std::abs(v); }));
             default:
-                throw std::invalid_argument("Unsupported norm order.");
+                throw std::invalid_argument("unsupported norm");
         }
     }
 
-    [[nodiscard]] constexpr T dot(const Derived &other) const noexcept {
-        T result = T{};
-        for (std::size_t i = 0; i < N; ++i) {
-            result += data[i] * other[i];
-        }
+    [[nodiscard]] constexpr T dot(const V_Derived &other) const noexcept {
+        T result = T(0);
+        for (std::size_t i = 0; i < N; ++i) result += vec[i] * other[i];
         return result;
     }
 
-    // Element-wise functions.
-    [[nodiscard]] constexpr Derived ceil() const noexcept
-        requires std::floating_point<T>
-    {
-        Derived result;
-        for (std::size_t i = 0; i < N; ++i) {
-            result[i] = std::ceil(data[i]);
-        }
+    [[nodiscard]] constexpr V_Derived ceil() const noexcept {
+        V_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = std::ceil(vec[i]);
         return result;
     }
 
-    [[nodiscard]] constexpr Derived floor() const noexcept
-        requires std::floating_point<T>
-    {
-        Derived result;
-        for (std::size_t i = 0; i < N; ++i) {
-            result[i] = std::floor(data[i]);
-        }
+    [[nodiscard]] constexpr V_Derived floor() const noexcept {
+        V_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = std::floor(vec[i]);
         return result;
     }
 
-    [[nodiscard]] constexpr Derived abs() const noexcept {
-        Derived result;
-        for (std::size_t i = 0; i < N; ++i) {
-            result[i] = std::abs(data[i]);
-        }
+    [[nodiscard]] constexpr V_Derived abs() const noexcept {
+        V_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = std::abs(vec[i]);
         return result;
     }
 
-    [[nodiscard]] constexpr Derived max(const Derived &other) const noexcept {
-        Derived result;
-        for (std::size_t i = 0; i < N; ++i) {
-            result[i] = std::max(data[i], other[i]);
-        }
+    [[nodiscard]] constexpr V_Derived max(const V_Derived &other) const noexcept {
+        V_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = std::max(vec[i], other[i]);
         return result;
     }
 
-    [[nodiscard]] constexpr Derived min(const Derived &other) const noexcept {
-        Derived result;
-        for (std::size_t i = 0; i < N; ++i) {
-            result[i] = std::min(data[i], other[i]);
-        }
+    [[nodiscard]] constexpr V_Derived min(const V_Derived &other) const noexcept {
+        V_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = std::min(vec[i], other[i]);
         return result;
-    }
-
-    // Helper functions.
-    [[nodiscard]] static constexpr bool is_zero(const T &val) noexcept {
-        if constexpr (std::is_floating_point_v<T>) {
-            return std::abs(val) <= epsilon();
-        } else {
-            return val == T{0};
-        }
-    }
-
-    [[nodiscard]] static constexpr bool are_equal(const T &a, const T &b) noexcept {
-        if constexpr (std::is_floating_point_v<T>) {
-            return std::abs(a - b) <= epsilon();
-        } else {
-            return a == b;
-        }
     }
 
 protected:
-    std::array<T, N> data{};
+    std::array<T, N> vec{};
 
-    // CRTP helper to get derived instance.
-    [[nodiscard]] constexpr Derived &derived() noexcept { return static_cast<Derived &>(*this); }
-    [[nodiscard]] constexpr const Derived &derived() const noexcept { return static_cast<const Derived &>(*this); }
-
-    // Helper functions.
-    [[nodiscard]] static constexpr T epsilon() noexcept {
-        if constexpr (std::is_floating_point_v<T>) {
-            return std::numeric_limits<T>::epsilon() * T{1000};
-        } else {
-            return T{0};
-        }
-    }
-
-    [[nodiscard]] static constexpr T calc_sqrt(const T &value) {
-        if constexpr (std::is_floating_point_v<T>) {
-            return std::sqrt(value);
-        } else {
-            return static_cast<T>(std::sqrt(static_cast<double>(value)));
-        }
-    }
+    [[nodiscard]] constexpr V_Derived &derived() noexcept { return static_cast<V_Derived &>(*this); }
+    [[nodiscard]] constexpr const V_Derived &derived() const noexcept { return static_cast<const V_Derived &>(*this); }
 };
 
-// Square matrix class.
-template <typename Derived, typename VecType, std::size_t N, Arithmetic T>
-    requires(N > 0) && (VecType::size() == N)
-class MatBase {
+template <typename V_Derived, typename M_Derived, typename D_Derived, std::size_t N, std::floating_point T>
+class Mat {
 public:
-    // Constructors.
-    constexpr MatBase() = default;
+    constexpr Mat() = default;
     template <typename... Args>
-    constexpr MatBase(Args &&...args) noexcept
-        requires(sizeof...(Args) == N && (std::is_same_v<VecType, std::decay_t<Args>> && ...))
-        : cols{std::forward<Args>(args)...} {}
+        requires(sizeof...(Args) == N && (std::same_as<std::decay_t<Args>, V_Derived> && ...))
+    constexpr Mat(Args &&...args) noexcept : cols{std::forward<Args>(args)...} {}
 
-    // Element access.
-    [[nodiscard]] constexpr VecType &operator[](std::size_t col) noexcept { return cols[col]; }
-    [[nodiscard]] constexpr const VecType &operator[](std::size_t col) const noexcept { return cols[col]; }
-    [[nodiscard]] constexpr T &operator()(std::size_t col, std::size_t row) noexcept { return cols[col][row]; }
-    [[nodiscard]] constexpr const T &operator()(std::size_t col, std::size_t row) const noexcept {
-        return cols[col][row];
+    [[nodiscard]] constexpr V_Derived &operator[](std::size_t col) noexcept { return cols[col]; }
+    [[nodiscard]] constexpr const V_Derived &operator[](std::size_t col) const noexcept { return cols[col]; }
+    [[nodiscard]] constexpr T &operator()(std::size_t i, std::size_t j) noexcept { return cols[j][i]; }
+    [[nodiscard]] constexpr const T &operator()(std::size_t i, std::size_t j) const noexcept { return cols[j][i]; }
+
+    [[nodiscard]] constexpr T *data() noexcept { return cols.data()->data(); }
+    [[nodiscard]] constexpr const T *data() const noexcept { return cols.data()->data(); }
+
+    [[nodiscard]] static constexpr std::size_t size() noexcept { return N * N; }
+
+    constexpr M_Derived &operator+=(const M_Derived &other) noexcept {
+        for (std::size_t j = 0; j < N; ++j) cols[j] += other[j];
+        return this->derived();
     }
 
-    // Data pointer access.
-    [[nodiscard]] constexpr T *ptr() noexcept { return cols.data()->ptr(); }
-    [[nodiscard]] constexpr const T *ptr() const noexcept { return cols.data()->ptr(); }
-
-    // Size and capacity.
-    [[nodiscard]] static constexpr std::size_t size() noexcept { return N * VecType::size(); }
-
-    // Assignment operators (return Derived&).
-    constexpr Derived &operator+=(const Derived &other) noexcept {
-        for (std::size_t j = 0; j < N; ++j) {
-            cols[j] += other[j];
-        }
-        return derived();
+    constexpr M_Derived &operator-=(const M_Derived &other) noexcept {
+        for (std::size_t j = 0; j < N; ++j) cols[j] -= other[j];
+        return this->derived();
     }
 
-    constexpr Derived &operator-=(const Derived &other) noexcept {
-        for (std::size_t j = 0; j < N; ++j) {
-            cols[j] -= other[j];
-        }
-        return derived();
+    constexpr M_Derived &operator*=(const T &scalar) noexcept {
+        for (auto &col : cols) col *= scalar;
+        return this->derived();
     }
 
-    constexpr Derived &operator/=(const T &scalar) {
-        if (VecType::is_zero(scalar))
-            throw std::invalid_argument("Division by zero in Mat.");
-
-        for (auto &col : cols) {
-            col /= scalar;
-        }
-        return derived();
+    constexpr M_Derived &operator/=(const T &scalar) {
+        for (auto &col : cols) col /= scalar;
+        return this->derived();
     }
 
-    constexpr Derived &operator*=(const T &scalar) noexcept {
-        for (auto &col : cols) {
-            col *= scalar;
-        }
-        return derived();
-    }
-
-    // Arithmetic operators (return Derived).
-    [[nodiscard]] constexpr Derived operator+(const Derived &other) const noexcept {
-        Derived result = derived();
+    [[nodiscard]] constexpr M_Derived operator+(const M_Derived &other) const noexcept {
+        M_Derived result = this->derived();
         result += other;
         return result;
     }
 
-    [[nodiscard]] constexpr Derived operator-(const Derived &other) const noexcept {
-        Derived result = derived();
+    [[nodiscard]] constexpr M_Derived operator-(const M_Derived &other) const noexcept {
+        M_Derived result = this->derived();
         result -= other;
         return result;
     }
 
-    [[nodiscard]] constexpr Derived operator/(const T &scalar) const {
-        Derived result = derived();
+    [[nodiscard]] constexpr M_Derived operator/(const T &scalar) const {
+        M_Derived result = this->derived();
         result /= scalar;
         return result;
     }
 
-    [[nodiscard]] constexpr Derived operator*(const T &scalar) const noexcept {
-        Derived result = derived();
+    [[nodiscard]] constexpr M_Derived operator*(const T &scalar) const noexcept {
+        M_Derived result = this->derived();
         result *= scalar;
         return result;
     }
 
-    [[nodiscard]] constexpr Derived operator*(const Derived &other) const noexcept {
-        Derived result;
-        for (std::size_t j = 0; j < N; ++j) {
-            for (std::size_t i = 0; i < N; ++i) {
-                T sum = T{0};
-                for (std::size_t k = 0; k < N; ++k) {
-                    sum += (*this)(k, i) * other(j, k);
-                }
-                result(j, i) = sum;
-            }
-        }
-        return result;
-    }
+    [[nodiscard]] constexpr M_Derived operator*(const M_Derived &other) const noexcept {
+        constexpr auto idx = std::views::iota(0, N);
 
-    [[nodiscard]] constexpr VecType operator*(const VecType &vec) const noexcept {
-        VecType result;
-        for (std::size_t i = 0; i < N; ++i) {
-            T sum = T{0};
+        M_Derived result;
+        std::for_each(std::execution::par_unseq, idx.begin(), idx.end(), [&](std::size_t k) {
+            const auto &vec = other[k];
             for (std::size_t j = 0; j < N; ++j) {
-                sum += (*this)(j, i) * vec[j];
+                const T &v = vec[j];
+                for (std::size_t i = 0; i < N; ++i) {
+                    result[k][i] += (*this)[j][i] * v;
+                }
             }
-            result[i] = sum;
+        });
+        return result;
+    }
+
+    [[nodiscard]] constexpr V_Derived operator*(const V_Derived &vec) const noexcept {
+        V_Derived result;
+        for (std::size_t j = 0; j < N; ++j) {
+            const T &v = vec[j];
+            for (std::size_t i = 0; i < N; ++i) {
+                result[i] += (*this)[j][i] * v;
+            }
         }
         return result;
     }
 
-    // Getters.
-    [[nodiscard]] constexpr const T &get_elem(std::size_t row, std::size_t col) const {
-        if (col >= N || row >= VecType::size())
-            throw std::out_of_range("Mat element indices out of range.");
-
-        return (*this)(col, row);
-    }
-
-    [[nodiscard]] constexpr const VecType &get_col(std::size_t idx) const {
-        if (idx >= N)
-            throw std::out_of_range("Mat column index out of range.");
-
-        return cols[idx];
-    }
-
-    [[nodiscard]] constexpr VecType get_row(std::size_t idx) const {
-        if (idx >= VecType::size())
-            throw std::out_of_range("Mat row index out of range.");
-
-        VecType vec;
+    [[nodiscard]] constexpr M_Derived operator*(const D_Derived &diag) const noexcept {
+        M_Derived result;
         for (std::size_t j = 0; j < N; ++j) {
-            vec[j] = (*this)(j, idx);
+            const T &v = diag[j];
+            for (std::size_t i = 0; i < N; ++i) {
+                result[j][i] = v * (*this)[j][i];
+            }
         }
-        return vec;
+        return result;
     }
 
-    // Setters.
-    constexpr void set_elem(std::size_t row, std::size_t col, T val) {
-        if (col >= N || row >= VecType::size())
-            throw std::out_of_range("Mat element indices out of range.");
-
-        (*this)(col, row) = val;
-    }
-
-    constexpr void set_col(std::size_t idx, const VecType &col) {
-        if (idx >= N)
-            throw std::out_of_range("Mat column index out of range.");
-
-        cols[idx] = col;
-    }
-
-    constexpr void set_row(std::size_t idx, const VecType &row) {
-        if (idx >= VecType::size())
-            throw std::out_of_range("Mat row index out of range.");
-
-        for (std::size_t j = 0; j < N; ++j) {
-            (*this)(j, idx) = row[j];
-        }
-    }
-
-    // Transpose the matrix.
-    [[nodiscard]] constexpr Derived transpose() const noexcept {
-        Derived result;
+    [[nodiscard]] constexpr M_Derived transpose() const noexcept {
+        M_Derived result;
         for (std::size_t j = 0; j < N; ++j) {
             for (std::size_t i = 0; i < N; ++i) {
-                result(j, i) = (*this)(i, j);
+                result[i][j] = (*this)[j][i];
             }
         }
         return result;
     }
 
-    [[nodiscard]] constexpr Derived abs() const noexcept {
-        Derived result;
-        for (std::size_t i = 0; i < N; ++i) {
-            result[i] = cols[i].abs();
-        }
+    [[nodiscard]] constexpr M_Derived abs() const noexcept {
+        M_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = cols[i].abs();
+        return result;
+    }
+
+    [[nodiscard]] static constexpr M_Derived identity() noexcept {
+        M_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i][i] = T(1);
         return result;
     }
 
 protected:
-    std::array<VecType, N> cols{};
+    std::array<V_Derived, N> cols{};
 
-    // CRTP helper to get derived instance.
-    [[nodiscard]] constexpr Derived &derived() noexcept { return static_cast<Derived &>(*this); }
-    [[nodiscard]] constexpr const Derived &derived() const noexcept { return static_cast<const Derived &>(*this); }
+    [[nodiscard]] constexpr M_Derived &derived() noexcept { return static_cast<M_Derived &>(*this); }
+    [[nodiscard]] constexpr const M_Derived &derived() const noexcept { return static_cast<const M_Derived &>(*this); }
 };
-}  // namespace vec_base
+
+template <typename V_Derived, typename M_Derived, typename D_Derived, std::size_t N, std::floating_point T>
+class Diag {
+public:
+    constexpr Diag() = default;
+    template <typename... Args>
+        requires(sizeof...(Args) == N && (std::same_as<std::decay_t<Args>, T> && ...))
+    constexpr Diag(Args &&...args) noexcept : diag{std::forward<Args>(args)...} {}
+
+    [[nodiscard]] constexpr T &operator[](std::size_t i) noexcept { return diag[i]; }
+    [[nodiscard]] constexpr const T &operator[](std::size_t i) const noexcept { return diag[i]; }
+
+    constexpr D_Derived &operator+=(const D_Derived &other) noexcept {
+        for (std::size_t i = 0; i < N; ++i) diag[i] += other[i];
+        return this->derived();
+    }
+
+    constexpr D_Derived &operator-=(const D_Derived &other) noexcept {
+        for (std::size_t i = 0; i < N; ++i) diag[i] -= other[i];
+        return this->derived();
+    }
+
+    constexpr D_Derived &operator*=(const T &scalar) noexcept {
+        for (auto &elem : diag) elem *= scalar;
+        return this->derived();
+    }
+
+    constexpr D_Derived &operator/=(const T &scalar) {
+        for (auto &elem : diag) elem /= scalar;
+        return this->derived();
+    }
+
+    [[nodiscard]] constexpr D_Derived operator+(const D_Derived &other) const noexcept {
+        D_Derived result = this->derived();
+        result += other;
+        return result;
+    }
+
+    [[nodiscard]] constexpr D_Derived operator-(const D_Derived &other) const noexcept {
+        D_Derived result = this->derived();
+        result -= other;
+        return result;
+    }
+
+    [[nodiscard]] constexpr D_Derived operator*(const T &scalar) const noexcept {
+        D_Derived result = this->derived();
+        result *= scalar;
+        return result;
+    }
+
+    [[nodiscard]] constexpr D_Derived operator/(const T &scalar) const {
+        D_Derived result = this->derived();
+        result /= scalar;
+        return result;
+    }
+
+    [[nodiscard]] constexpr D_Derived operator*(const D_Derived &other) const noexcept {
+        D_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = diag[i] * other[i];
+        return result;
+    }
+
+    [[nodiscard]] constexpr V_Derived operator*(const V_Derived &other) const noexcept {
+        V_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = diag[i] * other[i];
+        return result;
+    }
+
+    [[nodiscard]] constexpr M_Derived operator*(const M_Derived &other) const noexcept {
+        M_Derived result;
+        for (std::size_t j = 0; j < N; ++j) {
+            for (std::size_t i = 0; i < N; ++i) {
+                result[j][i] = diag[i] * other[j][i];
+            }
+        }
+        return result;
+    }
+
+    [[nodiscard]] constexpr M_Derived matrix() const noexcept {
+        M_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i][i] = diag[i];
+        return result;
+    }
+
+    [[nodiscard]] constexpr T determinant() const noexcept {
+        return std::accumulate(diag.begin(), diag.end(), T(1), std::multiplies<>{});
+    }
+
+    [[nodiscard]] constexpr D_Derived inverse() const {
+        D_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = T(1) / diag[i];
+        return result;
+    }
+
+    [[nodiscard]] constexpr D_Derived pow(T exp) const {
+        D_Derived result;
+        for (std::size_t i = 0; i < N; ++i) result[i] = std::pow(diag[i], exp);
+        return result;
+    }
+
+    [[nodiscard]] static constexpr D_Derived identity() noexcept {
+        return []<std::size_t... I>(std::index_sequence<I...>) {
+            return D_Derived((static_cast<void>(I), T(1))...);
+        }(std::make_index_sequence<N>{});
+    }
+
+private:
+    std::array<T, N> diag{};
+
+    [[nodiscard]] constexpr D_Derived &derived() noexcept { return static_cast<D_Derived &>(*this); }
+    [[nodiscard]] constexpr const D_Derived &derived() const noexcept { return static_cast<const D_Derived &>(*this); }
+};
+}  // namespace vector
