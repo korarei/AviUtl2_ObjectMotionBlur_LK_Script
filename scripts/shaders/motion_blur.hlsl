@@ -20,8 +20,8 @@ inline float2 to_uv(float3 pos, float2 texel) {
 }
 
 float4 motion_blur(PS_Input input) : SV_Target {
-    const uint count = uint(n);
     const float2 texel = rcp(res);
+    const uint count = uint(n);
 
     float3 pos = float3(mad(input.uv, res, -pivot), 1.0);
     float3 ofs = offset;

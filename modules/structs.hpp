@@ -39,10 +39,15 @@ public:
     Data<Transform> xform;
     Data<const Geo *> geo;
 
-    constexpr Flow(Geo *data_, const Geo &curr_, const Transform &xform_curr, const Transform &xform_prev) noexcept :
-        data(data_), curr(curr_), xform{xform_curr, xform_prev}, geo{&curr, data} {}
+    constexpr Flow(const Transform &xform_curr, const Transform &xform_prev, const Geo &curr_, Geo *data_) noexcept :
+        data(data_), curr(curr_), xform{xform_curr, xform_prev}, geo{&curr, &curr} {}
 
-    constexpr void write_data(const Geo &v) noexcept { *data = v; }
+    constexpr void write_data(const Geo &v) noexcept {
+        if (data)
+            *data = v;
+    }
+
+    constexpr const Geo *read_data() noexcept { return data && data->is_valid() ? data : nullptr; }
 
     [[nodiscard]] Delta delta() noexcept {
         xform.curr.set_geo(*geo.curr);

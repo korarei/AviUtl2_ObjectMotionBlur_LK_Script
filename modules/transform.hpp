@@ -11,8 +11,8 @@
 class Geo {
 public:
     constexpr Geo() noexcept : flag(0), frame(0), data{} {}
-    constexpr Geo(int frame_, double cx, double cy, double ox, double oy, double rz, double zoom) noexcept :
-        flag(1), frame(frame_), data{cx, cy, ox, oy, rz, zoom, zoom} {}
+    constexpr Geo(int frame_, double cx, double cy, double ox, double oy, double rz, double sx, double sy) noexcept :
+        flag(1), frame(frame_), data{cx, cy, ox, oy, rz, sx, sy} {}
 
     [[nodiscard]] constexpr double &operator[](std::size_t i) noexcept { return data[i]; }
     [[nodiscard]] constexpr const double &operator[](std::size_t i) const noexcept { return data[i]; }
@@ -50,8 +50,8 @@ private:
 class Transform {
 public:
     constexpr Transform() noexcept : data{} {}
-    constexpr Transform(double cx, double cy, double x, double y, double rz, double zoom) noexcept :
-        data{cx, cy, x, y, rz, zoom * 0.01, zoom * 0.01} {}
+    constexpr Transform(double cx, double cy, double x, double y, double rz, double sx, double sy) noexcept :
+        data{cx, cy, x, y, rz, sx, sy} {}
 
     [[nodiscard]] constexpr double &operator[](std::size_t i) noexcept { return data[i]; }
     [[nodiscard]] constexpr const double &operator[](std::size_t i) const noexcept { return data[i]; }

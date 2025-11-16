@@ -77,7 +77,8 @@ local geo_curr = {
     ox = obj.ox,
     oy = obj.oy,
     rz = obj.rz,
-    zoom = obj.zoom
+    sx = obj.sx,
+    sy = obj.sy
 }
 
 local xform_curr = {
@@ -86,7 +87,8 @@ local xform_curr = {
     x = gv("x"),
     y = gv("y"),
     rz = gv("rz"),
-    zoom = gv("zoom")
+    sx = gv("sx"),
+    sy = gv("sy")
 }
 
 local xform_prev = {}
@@ -111,13 +113,14 @@ else
         x = gv("x", t),
         y = gv("y", t),
         rz = gv("rz", t),
-        zoom = gv("zoom", t)
+        sx = gv("sx", t),
+        sy = gv("sy", t)
     }
 end
 
 local lib = obj.module("ObjectMotionBlur_LK")
-local geo_data = obj.data("geo")
-local smp, xform, scale, offset, margin = lib.compute_motion(params, context, geo_data, geo_curr, xform_curr, xform_prev)
+local data = obj.data("geo")
+local smp, xform, scale, offset, margin = lib.compute_motion(params, context, xform_curr, xform_prev, geo_curr, data, 64)
 
 if (resize) then
     obj.effect("領域拡張", "上", margin.top, "下", margin.bottom, "左", margin.left, "右", margin.right)

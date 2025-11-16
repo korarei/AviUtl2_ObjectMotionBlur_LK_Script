@@ -13,6 +13,7 @@
 #include "geo.hpp"
 #include "structs.hpp"
 #include "transform.hpp"
+#include "vector/vector.hpp"
 
 #ifndef VERSION
 #define VERSION L"0.1.0"
@@ -23,16 +24,14 @@ static LOG_HANDLE *logger;
 
 static void
 extrapolate(const Param &param, const Context &context, Flow &flow) noexcept {
-    if (!(param.ext && param.geo_cache)) {
-        flow.geo.prev = flow.geo.curr;
+    if (!(param.ext && param.geo_cache))
         return;
-    }
 
     bool valid = true;
     std::array<const Geo *, 2> geos{};
 
     for (int i = 0; i < param.ext; ++i) {
-        if (auto g = geo_map.read(context.id, context.idx, i + 1))
+        if (auto g = geo_map.read(context.id, context.idx, i + 2))
             geos[i] = g;
         else
             valid = false;
@@ -41,23 +40,29 @@ extrapolate(const Param &param, const Context &context, Flow &flow) noexcept {
     if (valid) {
         switch (param.ext) {
             case 1:
-                flow.write_data(*flow.geo.curr * 2.0 - *geos[0]);
-                return;
+                geo_map.overwrite(context.id, context.idx, 0, *flow.geo.curr * 2.0 - *geos[0]);
+                break;
             case 2:
-                flow.write_data(*flow.geo.curr * 3.0 - *geos[0] * 3.0 + *geos[1]);
-                return;
+                geo_map.overwrite(context.id, context.idx, 0, *flow.geo.curr * 3.0 - *geos[0] * 3.0 + *geos[1]);
+                break;
+            default:
+                geo_map.overwrite(context.id, context.idx, 0, *flow.geo.curr);
+                break;
         }
-    } else if (!flow.geo.prev->is_valid()) {
-        flow.geo.prev = flow.geo.curr;
+
+        if (auto g = geo_map.read(context.id, context.idx, 0)) {
+            flow.geo.prev = g;
+            flow.write_data(*g);
+        }
+    } else if (auto g = flow.read_data()) {
+        flow.geo.prev = g;
     }
 }
 
 static void
 read_geo(const Param &param, const Context &context, Flow &flow, int pos) noexcept {
-    if (auto geo_prev = param.geo_cache ? geo_map.read(context.id, context.idx, pos) : nullptr)
-        flow.geo.prev = geo_prev;
-    else
-        flow.geo.prev = flow.geo.curr;
+    if (auto g = param.geo_cache ? geo_map.read(context.id, context.idx, pos) : nullptr)
+        flow.geo.prev = g;
 }
 
 static Mat2<double>
@@ -121,23 +126,31 @@ load_context(SCRIPT_MODULE_PARAM *p, int idx) {
 
 static Flow
 load_flow(SCRIPT_MODULE_PARAM *p, int idx) {
-    auto to_num = [&](const char *key, int ofs = 0) { return p->get_param_table_double(idx + ofs, key); };
-    auto to_int = [&](const char *key, int ofs = 0) { return p->get_param_table_int(idx + ofs, key); };
-    auto to_data = [&]() { return reinterpret_cast<Geo *>(p->get_param_data(idx)); };
+    auto to_num = [&](const char *key, int ofs) { return p->get_param_table_double(idx + ofs, key); };
+    auto to_int = [&](const char *key, int ofs) { return p->get_param_table_int(idx + ofs, key); };
 
-    return Flow(to_data(),
-                Geo(to_int("frame", 1), to_num("cx", 1), to_num("cy", 1), to_num("ox", 1), to_num("oy", 1),
-                    to_num("rz", 1), to_num("zoom", 1)),
-                Transform(to_num("cx", 2), to_num("cy", 2), to_num("x", 2), to_num("y", 2), to_num("rz", 2),
-                          to_num("zoom", 2)),
-                Transform(to_num("cx", 3), to_num("cy", 3), to_num("x", 3), to_num("y", 3), to_num("rz", 3),
-                          to_num("zoom", 3)));
+    auto to_xform = [&](int ofs) {
+        return Transform(to_num("cx", ofs), to_num("cy", ofs), to_num("x", ofs), to_num("y", ofs), to_num("rz", ofs),
+                         to_num("sx", ofs), to_num("sy", ofs));
+    };
+
+    auto to_geo = [&](int ofs) {
+        return Geo(to_int("frame", ofs), to_num("cx", ofs), to_num("cy", ofs), to_num("ox", ofs), to_num("oy", ofs),
+                   to_num("rz", ofs), to_num("sx", ofs), to_num("sy", ofs));
+    };
+
+    auto to_data = [&](int ofs) {
+        auto data = reinterpret_cast<Geo *>(p->get_param_data(idx + ofs));
+        return data && p->get_param_int(idx + ofs + 1) == sizeof(Geo) ? data : nullptr;
+    };
+
+    return Flow(to_xform(0), to_xform(1), to_geo(2), to_data(3));
 }
 
-void
+static void
 compute_motion(SCRIPT_MODULE_PARAM *p) {
     const int n = p->get_param_num();
-    if (n != 6) {
+    if (n != 5 && n != 7) {
         p->set_error("Incorrect number of arguments");
         return;
     }
@@ -156,10 +169,10 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
     geo_map.resize(context.id, context.idx, context.num, param.geo_cache);
 
     if (save_st)
-        geo_map.overwrite(context.id, context.idx, context.frame, *flow.geo.curr);
+        geo_map.overwrite(context.id, context.idx, context.frame + 1, *flow.geo.curr);
 
     if (context.frame)
-        read_geo(param, context, flow, save_ed ? 0 : context.frame - 1);
+        read_geo(param, context, flow, save_ed ? 1 : context.frame);
     else
         extrapolate(param, context, flow);
 
@@ -174,7 +187,7 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
     auto motion = delta.build_xform(param.amt, smp, true);
 
     if (save_ed)
-        geo_map.write(context.id, context.idx, 0, *flow.geo.curr);
+        geo_map.write(context.id, context.idx, 1, *flow.geo.curr);
 
     cleanup_geo(param, context);
 
@@ -186,10 +199,7 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
                 L"Required Samples: {}",
                 context.id, context.idx, req_smp + 1);
 
-        std::wstring verbose = std::format(
-                L"\n"
-                L"Size of Geo class: {} B",
-                sizeof(Geo));
+        std::wstring verbose = std::format(L"Size of Geo class: {} B", sizeof(Geo));
 
         logger->info(logger, info.c_str());
         logger->verbose(logger, verbose.c_str());
@@ -207,20 +217,22 @@ static SCRIPT_MODULE_FUNCTION functions[] = {{L"compute_motion", compute_motion}
 
 static SCRIPT_MODULE_TABLE script_module_table = {L"ObjectMotionBlur_LK v" VERSION L" by Korarei", functions};
 
-extern "C" SCRIPT_MODULE_TABLE *
+extern "C" {
+SCRIPT_MODULE_TABLE *
 GetScriptModuleTable() {
     return &script_module_table;
 }
 
-extern "C" void
+void
 InitializeLogger(LOG_HANDLE *l) {
     logger = l;
 }
 
-extern "C" bool
+bool
 InitializePlugin(DWORD v) {
-    if (v < 2001901)
+    if (v < 2002000)
         return false;
     else
         return true;
+}
 }
