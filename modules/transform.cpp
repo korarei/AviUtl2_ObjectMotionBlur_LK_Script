@@ -1,11 +1,11 @@
 #include "transform.hpp"
 
 Delta::Delta(const Transform &from, const Transform &to) noexcept :
-    rot(to.rotation() - from.rotation()),
     base(from.scale().inverse()),
     scale(base * to.scale()),
     pos(base * (to.position() - from.position()).rotate(-from.rotation())),
     center(from.center() - to.center()),
+    rot(to.rotation() - from.rotation()),
     flag(is_zero(pos.norm(2)) && is_zero(center.norm(2)) && is_zero(scale.determinant() - 1.0) && is_zero(rot)) {}
 
 Delta::Motion

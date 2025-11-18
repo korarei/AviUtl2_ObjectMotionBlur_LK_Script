@@ -79,7 +79,7 @@ public:
     struct Motion {
         Mat3<double> xform;
         Diag3<double> scale;
-        Vec3<double> offset;
+        Vec3<double> drift;
     };
 
     Delta(const Transform &from, const Transform &to) noexcept;

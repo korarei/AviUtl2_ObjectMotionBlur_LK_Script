@@ -72,7 +72,7 @@ resize(const Context &context, const Delta &delta, double amt) noexcept {
     std::array<Delta::Motion, 2> data{delta.build_xform(amt * 0.5), delta.build_xform(amt)};
     for (int i = 0; i < 2; ++i) {
         const auto xform = data[i].xform * data[i].scale;
-        auto c_prev = Vec3<double>(-context.pivot, 1.0) + data[i].offset;
+        auto c_prev = Vec3<double>(-context.pivot, 1.0) + data[i].drift;
         auto pos = (xform * c_prev).to_vec2() + context.pivot;
         auto bbox = (xform.to_mat2().abs()) * context.res;
 
@@ -125,7 +125,7 @@ load_context(SCRIPT_MODULE_PARAM *p, int idx) {
 }
 
 static Flow
-load_flow(SCRIPT_MODULE_PARAM *p, int idx) {
+load_flow(SCRIPT_MODULE_PARAM *p, int idx, int frame) {
     auto to_num = [&](const char *key, int ofs) { return p->get_param_table_double(idx + ofs, key); };
     auto to_int = [&](const char *key, int ofs) { return p->get_param_table_int(idx + ofs, key); };
 
@@ -135,8 +135,8 @@ load_flow(SCRIPT_MODULE_PARAM *p, int idx) {
     };
 
     auto to_geo = [&](int ofs) {
-        return Geo(to_int("frame", ofs), to_num("cx", ofs), to_num("cy", ofs), to_num("ox", ofs), to_num("oy", ofs),
-                   to_num("rz", ofs), to_num("sx", ofs), to_num("sy", ofs));
+        return Geo(frame, to_num("cx", ofs), to_num("cy", ofs), to_num("ox", ofs), to_num("oy", ofs), to_num("rz", ofs),
+                   to_num("sx", ofs), to_num("sy", ofs));
     };
 
     auto to_data = [&](int ofs) {
@@ -157,7 +157,7 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
 
     const Param param = load_param(p, 0);
     const Context context = load_context(p, 1);
-    Flow flow = load_flow(p, 2);
+    Flow flow = load_flow(p, 2, context.frame);
 
     const bool save_ed = param.geo_cache == 2;
     const bool save_st = param.geo_cache == 1 || (save_ed && (context.frame == 1 || context.frame == 2));
@@ -209,7 +209,7 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
     p->push_result_int(smp);
     p->push_result_array_double(motion.xform.data(), static_cast<int>(motion.xform.size()));
     p->push_result_array_double(motion.scale.matrix().data(), static_cast<int>(motion.scale.size()));
-    p->push_result_array_double(motion.offset.data(), static_cast<int>(motion.offset.size()));
+    p->push_result_array_double(motion.drift.data(), static_cast<int>(motion.drift.size()));
     p->push_result_table_double(keys, margin.data(), static_cast<int>(margin.size()));
 }
 
