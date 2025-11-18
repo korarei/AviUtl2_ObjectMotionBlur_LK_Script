@@ -10,7 +10,7 @@
 --track5:Mix,0,100,0,0.01
 --check1:Print Information,0
 --value@_0:PI,{}
---data@geo:1024
+--data@geo:64
 --[[pixelshader@motion_blur:
 --#include "shaders/motion_blur.hlsl"
 ]]
