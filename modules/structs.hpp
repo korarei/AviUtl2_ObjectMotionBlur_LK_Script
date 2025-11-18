@@ -50,7 +50,7 @@ public:
             *data = v;
     }
 
-    constexpr const Geo *read_data() noexcept { return data && data->is_valid() ? data : nullptr; }
+    [[nodiscard]] constexpr const Geo *read_data() noexcept { return data && data->is_valid() ? data : nullptr; }
 
     [[nodiscard]] Delta delta() noexcept {
         xform.curr.set_geo(*geo.curr);
