@@ -166,10 +166,15 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
     int smp = 0;
     Mat2<double> margin{};
 
-    atlas.resize(context.id, context.idx, context.num, param.geo_cache);
-    if (!param.geo_cache) {
-        if (auto g = flow.read_data())
-            flow.write_data(Geo());
+    try {
+        atlas.resize(context.id, context.idx, context.num, param.geo_cache);
+        if (!param.geo_cache) {
+            if (auto g = flow.read_data())
+                flow.write_data(Geo());
+        }
+    } catch (...) {
+        p->set_error("Initialization failed");
+        return;
     }
 
     if (save_st)
