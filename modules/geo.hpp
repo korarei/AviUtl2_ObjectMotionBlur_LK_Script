@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <map>
 #include <unordered_map>
 #include <vector>
@@ -10,14 +9,16 @@
 #include "transform.hpp"
 
 template <std::size_t N>
-class GeoMap {
+class Atlas {
 public:
-    constexpr GeoMap() noexcept = default;
-    constexpr ~GeoMap() noexcept = default;
+    constexpr Atlas() noexcept = default;
+    constexpr ~Atlas() noexcept = default;
 
     constexpr void resize(int id, int idx, int num, int mode) {
         if (mode == 0) {
-            clear(id);
+            if (storage.find(id) != storage.end())
+                clear(id);
+
             return;
         }
 
@@ -106,7 +107,7 @@ private:
     Storage storage{};
 
     [[nodiscard]] constexpr std::array<int, 2> split_pos(int pos) const noexcept {
-        const int size = static_cast<int>(N);
+        constexpr int size = static_cast<int>(N);
         return {pos / size, pos % size};
     }
 

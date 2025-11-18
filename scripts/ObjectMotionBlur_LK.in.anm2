@@ -6,11 +6,11 @@
 --select@s0:Extrapolation=2,None=0,Linear=1,Quadratic=2
 --check0:Resize,1
 --select@s1:Geo Cache,None=0,Full=1,Minimal=2
---select@s2:Cache Control,Off=0,Auto=1,All=2,Current=3
+--select@s2:Cache Purge,None=0,Auto=1,All=2,Active=3
 --track5:Mix,0,100,0,0.01
 --check1:Print Information,0
 --value@_0:PI,{}
---data@geo:1024
+--data@geo:64
 --[[pixelshader@motion_blur:
 --#include "shaders/motion_blur.hlsl"
 ]]
@@ -30,13 +30,13 @@ local function clamp(v, min, max)
 end
 
 _0 = _0 or {}
-local amt = clamp(tonumber(_0.shutter_angle) or obj.track2, 0.0, 360.0) / 360.0
+local amt = math.max(tonumber(_0.shutter_angle) or obj.track2, 0.0) / 360.0
 local smp_lim_r = math.max(tonumber(_0.render_sample_limit) or obj.track3, 1)
 local smp_lim_p = math.max(tonumber(_0.preview_sample_limit) or obj.track4, 0)
 local ext = clamp(tonumber(_0.extrapolation) or s0, 0, 2) s0 = nil
 local resize = tobool(_0.resize, obj.check0)
 local geo_cache = clamp(tonumber(_0.geo_cache or s1), 0, 2) s1 = nil
-local cache_ctrl = clamp(tonumber(_0.cache_ctrl or s2), 0, 3) s2 = nil
+local cache_purge = clamp(tonumber(_0.cache_purge or s2), 0, 3) s2 = nil
 local mix = clamp(tonumber(_0.mix) or obj.track5, 0.0, 100.0) * 0.01
 local print_info = tobool(_0.print_info, obj.check1)
 _0 = nil
@@ -54,11 +54,12 @@ local params = {
     smp_lim = (obj.getinfo("saving") or smp_lim_p < 1) and smp_lim_r or smp_lim_p,
     ext = ext,
     geo_cache = geo_cache,
-    cache_ctrl = cache_ctrl,
+    cache_ctrl = cache_purge,
     print_info = print_info
 }
 
 local context = {
+    name = "${SCRIPT_NAME}",
     w = obj.w,
     h = obj.h,
     cx = cx + obj.cx,
@@ -76,8 +77,8 @@ local geo_curr = {
     ox = obj.ox,
     oy = obj.oy,
     rz = obj.rz,
-    zoom = obj.zoom,
-    frame = obj.frame
+    sx = obj.sx,
+    sy = obj.sy
 }
 
 local xform_curr = {
@@ -86,7 +87,8 @@ local xform_curr = {
     x = gv("x"),
     y = gv("y"),
     rz = gv("rz"),
-    zoom = gv("zoom")
+    sx = gv("sx"),
+    sy = gv("sy")
 }
 
 local xform_prev = {}
@@ -111,12 +113,14 @@ else
         x = gv("x", t),
         y = gv("y", t),
         rz = gv("rz", t),
-        zoom = gv("zoom", t)
+        sx = gv("sx", t),
+        sy = gv("sy", t)
     }
 end
 
 local lib = obj.module("ObjectMotionBlur_LK")
-local smp, htm, drift, margin = lib.compute_motion(params, context, obj.data("geo"), geo_curr, xform_curr, xform_prev)
+local data = obj.data("geo")
+local margin, smp, xform, scale, drift = lib.compute_motion(params, context, xform_curr, xform_prev, geo_curr, data, 64)
 
 if (resize) then
     obj.effect("領域拡張", "上", margin.top, "下", margin.bottom, "左", margin.left, "右", margin.right)
@@ -126,12 +130,15 @@ end
 
 if (smp > 0) then
     obj.pixelshader("motion_blur", "object", "object", {
-        htm[1], htm[2], htm[3], 0.0,
-        htm[4], htm[5], htm[6], 0.0,
-        htm[7], htm[8], htm[9], 0.0,
-        drift[1], drift[2],
+        xform[1], xform[2], xform[3], 0.0,
+        xform[4], xform[5], xform[6], 0.0,
+        xform[7], xform[8], xform[9], 0.0,
+        scale[1], scale[2], scale[3], 0.0,
+        scale[4], scale[5], scale[6], 0.0,
+        scale[7], scale[8], scale[9], 0.0,
+        drift[1], drift[2], drift[3], 0.0,
         obj.w, obj.h,
-        obj.w * 0.5 + obj.cx, obj.h * 0.5 + obj.cy,
+        obj.w * 0.5 + cx + obj.cx, obj.h * 0.5 + cy + obj.cy,
         smp,
         mix
     }, "copy", "clip")

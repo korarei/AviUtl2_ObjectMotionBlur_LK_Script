@@ -17,7 +17,7 @@
         ],
         "modules": [
             {
-                "path": "../dll_src/build/Release/*.mod2"
+                "path": "../modules/build/Release/*.mod2"
             }
         ]
     },

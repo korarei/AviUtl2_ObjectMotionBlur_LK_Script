@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -11,28 +10,28 @@
 
 class Geo {
 public:
-    constexpr Geo() noexcept : data{}, frame(0), flag(false) {}
-    constexpr Geo(double cx, double cy, double ox, double oy, double rz, double zoom, int frame_) noexcept :
-        data{cx, cy, ox, oy, rz, zoom}, frame(frame_), flag(true) {}
+    constexpr Geo() noexcept : flag(0), frame(0), data{} {}
+    constexpr Geo(int frame_, double cx, double cy, double ox, double oy, double rz, double sx, double sy) noexcept :
+        flag(1), frame(frame_), data{cx, cy, ox, oy, rz, sx, sy} {}
 
     [[nodiscard]] constexpr double &operator[](std::size_t i) noexcept { return data[i]; }
     [[nodiscard]] constexpr const double &operator[](std::size_t i) const noexcept { return data[i]; }
 
     [[nodiscard]] constexpr Geo operator+(const Geo &other) const noexcept {
         Geo result = *this;
-        for (std::size_t i = 0; i < 6; ++i) result[i] += other[i];
+        for (std::size_t i = 0; i < data.size(); ++i) result[i] += other[i];
         return result;
     }
 
     [[nodiscard]] constexpr Geo operator-(const Geo &other) const noexcept {
         Geo result = *this;
-        for (std::size_t i = 0; i < 6; ++i) result[i] -= other[i];
+        for (std::size_t i = 0; i < data.size(); ++i) result[i] -= other[i];
         return result;
     }
 
     [[nodiscard]] constexpr Geo operator*(const double &scalar) const noexcept {
         Geo result = *this;
-        for (std::size_t i = 0; i < 6; ++i) result[i] *= scalar;
+        for (std::size_t i = 0; i < data.size(); ++i) result[i] *= scalar;
         return result;
     }
 
@@ -43,53 +42,56 @@ public:
     [[nodiscard]] constexpr bool is_valid() const noexcept { return flag; }
 
 private:
-    std::array<double, 6> data;
-    int frame;
-    bool flag;
+    std::int32_t flag;
+    std::int32_t frame;
+    std::array<double, 7> data;
 };
 
 class Transform {
 public:
     constexpr Transform() noexcept : data{} {}
-    constexpr Transform(double cx, double cy, double x, double y, double rz, double zoom) noexcept :
-        data{cx, cy, x, y, rz, zoom * 0.01} {}
+    constexpr Transform(double cx, double cy, double x, double y, double rz, double sx, double sy) noexcept :
+        data{cx, cy, x, y, rz, sx, sy} {}
 
     [[nodiscard]] constexpr double &operator[](std::size_t i) noexcept { return data[i]; }
     [[nodiscard]] constexpr const double &operator[](std::size_t i) const noexcept { return data[i]; }
 
-    [[nodiscard]] constexpr Vec2<double> center() const noexcept { return Vec2<double>(data[0], data[1]); }
-    [[nodiscard]] constexpr Vec2<double> position() const noexcept { return Vec2<double>(data[2], data[3]); }
+    [[nodiscard]] constexpr Vec2<double> center() const noexcept { return Vec2(data[0], data[1]); }
+    [[nodiscard]] constexpr Vec2<double> position() const noexcept { return Vec2(data[2], data[3]); }
     [[nodiscard]] constexpr double rotation() const noexcept { return to_rad(data[4]); }
-    [[nodiscard]] constexpr double scale() const noexcept { return std::max(data[5], eps); }
+    [[nodiscard]] constexpr Diag2<double> scale() const noexcept {
+        return Diag2(std::max(data[5], eps), std::max(data[6], eps));
+    }
 
     constexpr void set_geo(const Geo &geo) noexcept {
         for (std::size_t i = 0; i < 5; ++i) data[i] += geo[i];
         data[5] *= geo[5];
+        data[6] *= geo[6];
     }
 
 private:
     static constexpr double eps = 1.0e-4;
-    std::array<double, 6> data;
+    std::array<double, 7> data;
 };
 
 class Delta {
 public:
     struct Motion {
-        Mat3<double> htm;  // Homogeneous Transformation Matrix
-        Vec2<double> drift;
-
-        constexpr Motion() noexcept : htm(Mat3<double>::identity()), drift{} {}
-        constexpr Motion(const Mat3<double> &m, const Vec2<double> &v) noexcept : htm(m), drift(v) {}
+        Mat3<double> xform;
+        Diag3<double> scale;
+        Vec3<double> drift;
     };
 
     Delta(const Transform &from, const Transform &to) noexcept;
 
-    [[nodiscard]] constexpr const bool is_moved() const noexcept { return !flag; }
+    [[nodiscard]] constexpr bool is_moved() const noexcept { return !flag; }
 
-    [[nodiscard]] Motion compute_motion(double amt, int smp = 1, bool invert = false) const noexcept;
+    [[nodiscard]] Motion build_xform(double amt, int smp = 1, bool inverse = false) const noexcept;
 
 private:
-    double rot, scale;
+    Diag2<double> base;
+    Diag2<double> scale;
     Vec2<double> pos, center;
+    double rot;
     bool flag;
 };

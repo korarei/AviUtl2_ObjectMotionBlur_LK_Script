@@ -27,12 +27,12 @@ jobs:
     - name: Download sdk
       run: |
         Invoke-WebRequest -UserAgent "Wget" -Uri https://spring-fragrance.mints.ne.jp/aviutl/aviutl2_sdk.zip -OutFile aviutl2_sdk.zip
-        Expand-Archive -Path aviutl2_sdk.zip -DestinationPath ./dll_src/aviutl2_sdk -Force
+        Expand-Archive -Path aviutl2_sdk.zip -DestinationPath ./modules/aviutl2_sdk -Force
         Remove-Item aviutl2_sdk.zip -Force
 
     - name: Convert file encoding
       run: |
-        $folder = "./dll_src/aviutl2_sdk"
+        $folder = "./modules/aviutl2_sdk"
         Get-ChildItem -Path $folder -Filter "*.h" -Recurse | ForEach-Object {
           $file = $_.FullName
           $content = Get-Content $file -Raw -Encoding "shift_jis"
@@ -44,14 +44,14 @@ jobs:
       run: |
         cd ${{ github.workspace }}
         $version = "${{ github.ref_name }}" -replace '^v', ''
-        cmake -S dll_src -B dll_src/build -DCMAKE_GENERATOR_PLATFORM=x64 -DVERSION="$version"
-        cmake --build dll_src/build --config Release
+        cmake -S modules -B modules/build -DCMAKE_GENERATOR_PLATFORM=x64 -DVERSION="$version"
+        cmake --build modules/build --config Release
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: module
-        path: ${{ github.workspace }}/dll_src/build/Release/*.mod2
+        path: ${{ github.workspace }}/modules/build/Release/*.mod2
   
   releaser:
     needs: build
@@ -73,7 +73,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: module
-        path: ${{ github.workspace }}/dll_src/build/Release
+        path: ${{ github.workspace }}/modules/build/Release
 
     - name: Extract script name
       run: |
