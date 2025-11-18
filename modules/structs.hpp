@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "transform.hpp"
 #include "vector/vector.hpp"
 
@@ -8,20 +10,21 @@ struct Param {
     int smp_lim;
     int ext;
     int geo_cache;
-    int cache_ctrl;
+    int cache_purge;
     bool print_info;
 };
 
 struct Context {
+    std::string name;
     Vec2<double> res;
     Vec2<double> pivot;
     int id, idx, num;
     int frame;
     int range;
 
-    constexpr Context(double w, double h, double cx, double cy, int id_, int idx_, int num_, int frame_,
-                      int range_) noexcept :
-        res(w, h), pivot(cx, cy), id(id_), idx(idx_), num(num_), frame(frame_), range(range_) {}
+    constexpr Context(const std::string &name_, double w, double h, double cx, double cy, int id_, int idx_, int num_,
+                      int frame_, int range_) noexcept :
+        name(name_), res(w, h), pivot(cx, cy), id(id_), idx(idx_), num(num_), frame(frame_), range(range_) {}
 };
 
 template <typename T>

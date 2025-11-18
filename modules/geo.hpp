@@ -9,14 +9,16 @@
 #include "transform.hpp"
 
 template <std::size_t N>
-class GeoMap {
+class Atlas {
 public:
-    constexpr GeoMap() noexcept = default;
-    constexpr ~GeoMap() noexcept = default;
+    constexpr Atlas() noexcept = default;
+    constexpr ~Atlas() noexcept = default;
 
     constexpr void resize(int id, int idx, int num, int mode) {
         if (mode == 0) {
-            clear(id);
+            if (storage.find(id) != storage.end())
+                clear(id);
+
             return;
         }
 

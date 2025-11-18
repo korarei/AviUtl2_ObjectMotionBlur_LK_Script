@@ -2,6 +2,7 @@
 #include <array>
 #include <format>
 #include <string>
+#include <unordered_map>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -19,19 +20,21 @@
 #define VERSION L"0.1.0"
 #endif
 
-static auto geo_map = GeoMap<8>();
+using AtlasOct = Atlas<8>;
+
+static auto atlas_table = std::unordered_map<std::string, AtlasOct>{};
 static LOG_HANDLE *logger;
 
 static void
-extrapolate(const Param &param, const Context &context, Flow &flow) noexcept {
-    if (!(param.ext && param.geo_cache))
+extrapolate(AtlasOct &atlas, const Param &param, const Context &context, Flow &flow) noexcept {
+    if (!param.ext)
         return;
 
     bool valid = true;
     std::array<const Geo *, 2> geos{};
 
     for (int i = 0; i < param.ext; ++i) {
-        if (auto g = geo_map.read(context.id, context.idx, i + 2))
+        if (auto g = atlas.read(context.id, context.idx, i + 2))
             geos[i] = g;
         else
             valid = false;
@@ -40,29 +43,23 @@ extrapolate(const Param &param, const Context &context, Flow &flow) noexcept {
     if (valid) {
         switch (param.ext) {
             case 1:
-                geo_map.overwrite(context.id, context.idx, 0, *flow.geo.curr * 2.0 - *geos[0]);
+                atlas.overwrite(context.id, context.idx, 0, *flow.geo.curr * 2.0 - *geos[0]);
                 break;
             case 2:
-                geo_map.overwrite(context.id, context.idx, 0, *flow.geo.curr * 3.0 - *geos[0] * 3.0 + *geos[1]);
+                atlas.overwrite(context.id, context.idx, 0, *flow.geo.curr * 3.0 - *geos[0] * 3.0 + *geos[1]);
                 break;
             default:
-                geo_map.overwrite(context.id, context.idx, 0, *flow.geo.curr);
+                atlas.overwrite(context.id, context.idx, 0, *flow.geo.curr);
                 break;
         }
 
-        if (auto g = geo_map.read(context.id, context.idx, 0)) {
+        if (auto g = atlas.read(context.id, context.idx, 0)) {
             flow.geo.prev = g;
             flow.write_data(*g);
         }
     } else if (auto g = flow.read_data()) {
         flow.geo.prev = g;
     }
-}
-
-static void
-read_geo(const Param &param, const Context &context, Flow &flow, int pos) noexcept {
-    if (auto g = param.geo_cache ? geo_map.read(context.id, context.idx, pos) : nullptr)
-        flow.geo.prev = g;
 }
 
 static Mat2<double>
@@ -85,20 +82,20 @@ resize(const Context &context, const Delta &delta, double amt) noexcept {
 }
 
 static void
-cleanup_geo(const Param &param, const Context &context) {
+cleanup_geo(AtlasOct &atlas, const Param &param, const Context &context) {
     if (context.idx != context.num - 1)
         return;
 
-    switch (param.cache_ctrl) {
+    switch (param.cache_purge) {
         case 1:
             if (context.frame != context.range - 1)
-                geo_map.clear(context.id);
+                atlas.clear(context.id);
             return;
         case 2:
-            geo_map.clear();
+            atlas.clear();
             return;
         case 3:
-            geo_map.clear(context.id);
+            atlas.clear(context.id);
             return;
         default:
             return;
@@ -119,9 +116,10 @@ static Context
 load_context(SCRIPT_MODULE_PARAM *p, int idx) {
     auto to_num = [&](const char *key) { return p->get_param_table_double(idx, key); };
     auto to_int = [&](const char *key) { return p->get_param_table_int(idx, key); };
+    auto to_string = [&](const char *key) { return p->get_param_table_string(idx, key); };
 
-    return Context(to_num("w"), to_num("h"), to_num("cx"), to_num("cy"), to_int("id"), to_int("idx"), to_int("num"),
-                   to_int("frame"), to_int("range"));
+    return Context(to_string("name"), to_num("w"), to_num("h"), to_num("cx"), to_num("cy"), to_int("id"), to_int("idx"),
+                   to_int("num"), to_int("frame"), to_int("range"));
 }
 
 static Flow
@@ -162,19 +160,26 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
     const bool save_ed = param.geo_cache == 2;
     const bool save_st = param.geo_cache == 1 || (save_ed && (context.frame == 1 || context.frame == 2));
 
+    auto &atlas = atlas_table[context.name];
     int req_smp = 0;
     int smp = 0;
     Mat2<double> margin{};
 
-    geo_map.resize(context.id, context.idx, context.num, param.geo_cache);
+    atlas.resize(context.id, context.idx, context.num, param.geo_cache);
+    if (!param.geo_cache) {
+        if (auto g = flow.read_data())
+            flow.write_data(Geo());
+    }
 
     if (save_st)
-        geo_map.overwrite(context.id, context.idx, context.frame + 1, *flow.geo.curr);
+        atlas.overwrite(context.id, context.idx, context.frame + 1, *flow.geo.curr);
 
-    if (context.frame)
-        read_geo(param, context, flow, save_ed ? 1 : context.frame);
-    else
-        extrapolate(param, context, flow);
+    if (param.geo_cache) {
+        if (!context.frame)
+            extrapolate(atlas, param, context, flow);
+        else if (auto g = atlas.read(context.id, context.idx, save_ed ? 1 : context.frame))
+            flow.geo.prev = g;
+    }
 
     const auto delta = flow.delta();
 
@@ -187,9 +192,9 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
     auto motion = delta.build_xform(param.amt, smp, true);
 
     if (save_ed)
-        geo_map.write(context.id, context.idx, 1, *flow.geo.curr);
+        atlas.write(context.id, context.idx, 1, *flow.geo.curr);
 
-    cleanup_geo(param, context);
+    cleanup_geo(atlas, param, context);
 
     if (param.print_info) {
         std::wstring info = std::format(
