@@ -23,6 +23,7 @@
 using AtlasOct = Atlas<8>;
 
 static auto atlas_table = std::unordered_map<std::string, AtlasOct>{};
+static int ver = 0;
 static LOG_HANDLE *logger;
 
 static void
@@ -218,7 +219,12 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
     p->push_result_table_double(keys, margin.data(), static_cast<int>(margin.size()));
 }
 
-static SCRIPT_MODULE_FUNCTION functions[] = {{L"compute_motion", compute_motion}, {nullptr}};
+static void
+version(SCRIPT_MODULE_PARAM *p) {
+    p->push_result_int(ver);
+}
+
+static SCRIPT_MODULE_FUNCTION functions[] = {{L"compute_motion", compute_motion}, {L"version", version}, {nullptr}};
 
 static SCRIPT_MODULE_TABLE script_module_table = {L"ObjectMotionBlur_LK v" VERSION L" by Korarei", functions};
 
@@ -237,7 +243,22 @@ bool
 InitializePlugin(DWORD v) {
     if (v < 2002000)
         return false;
-    else
-        return true;
+
+    constexpr auto parse = [](const wchar_t *s) {
+        int v[3] = {0, 0, 0}, idx = 0;
+
+        for (int i = 0; s[i]; ++i) {
+            if (L'0' <= s[i] && s[i] <= L'9')
+                v[idx] = v[idx] * 10 + (s[i] - L'0');
+            else if (s[i] == L'.' && idx < 2)
+                ++idx;
+        }
+
+        return v[0] * 1000000 + v[1] * 1000 + v[2];
+    };
+
+    ver = parse(VERSION);
+
+    return true;
 }
 }
