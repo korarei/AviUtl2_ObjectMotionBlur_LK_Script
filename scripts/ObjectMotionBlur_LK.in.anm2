@@ -120,7 +120,7 @@ end
 
 local lib = obj.module("ObjectMotionBlur_LK")
 local data = obj.data("geo")
-local smp, xform, scale, drift, margin = lib.compute_motion(params, context, xform_curr, xform_prev, geo_curr, data, 64)
+local margin, smp, xform, scale, drift = lib.compute_motion(params, context, xform_curr, xform_prev, geo_curr, data, 64)
 
 if (resize) then
     obj.effect("領域拡張", "上", margin.top, "下", margin.bottom, "左", margin.left, "右", margin.right)

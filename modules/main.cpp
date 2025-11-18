@@ -217,11 +217,11 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
     }
 
     LPCSTR keys[] = {"left", "top", "right", "bottom"};
+    p->push_result_table_double(keys, margin.data(), static_cast<int>(margin.size()));
     p->push_result_int(smp);
     p->push_result_array_double(motion.xform.data(), static_cast<int>(motion.xform.size()));
     p->push_result_array_double(motion.scale.matrix().data(), static_cast<int>(motion.scale.size()));
     p->push_result_array_double(motion.drift.data(), static_cast<int>(motion.drift.size()));
-    p->push_result_table_double(keys, margin.data(), static_cast<int>(margin.size()));
 }
 
 static void
