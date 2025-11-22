@@ -205,22 +205,22 @@
 #### 戻り値
 
 1. `maegin` (table) : 領域拡張量
-1. `samples` (number) : サンプリング数 (必要サンプル数より1小さい)
-1. `xform_matrix` (table) : 1つ目のサンプリング地点までの同次変換行列の逆行列
-1. `scaling_matrix` (table) : 1つ目のサンプリング地点でのスケーリング行列の逆行列
-1. `drift_vector` (tavle) : 1つ目のサンプリング地点での中心座標ずれの逆ベクトル
+1. `samples` (number) : サンプリング数
+1. `xform_matrix` (table) : 2つ目のサンプリング地点までの同次変換行列の逆行列
+1. `scaling_matrix` (table) : 2つ目のサンプリング地点でのスケーリング行列の逆行列
+1. `drift_vector` (tavle) : 2つ目のサンプリング地点での中心座標ずれの逆ベクトル
 
 > [!NOTE]
 > 行列，ベクトルは列優先で一次元配列である．
 >
 > 行列は3次元正方行列，ベクトルは3次元ベクトルである．
 >
-> `samples`が0のとき，単位行列，0ベクトルとなる．
+> `samples`が1のとき，単位行列，0ベクトルとなる．
 
 > [!TIP]
 > `xform_matrix`，`scaling_matrix`，`drift_vector`について．
 >
-> 現在位置 $\Sigma_0$ から1つ目のサンプリング位置 $\Sigma_1$ への変換を ${}^0T_1$ とし， $\Sigma_1$ からターゲット座標 $\Sigma_t$ への変換を ${}^1S_t$ とする．
+> 現在位置 $\Sigma_0$ から2つ目のサンプリング位置 $\Sigma_1$ への変換を ${}^0T_1$ とし， $\Sigma_1$ からターゲット座標 $\Sigma_t$ への変換を ${}^1S_t$ とする．
 >
 > 中心 $\boldsymbol{V}$ とズレ量 $\boldsymbol{d}$ を用いると， $\Sigma_t$ での中心座標 ${}^t\boldsymbol{V}$ は以下のように表現できる．
 >
