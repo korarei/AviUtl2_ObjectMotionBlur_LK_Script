@@ -218,12 +218,14 @@
 > `samples`が0のとき，単位行列，0ベクトルとなる．
 
 > [!TIP]
+> `xform_matrix`，`scaling_matrix`，`drift_vector`について．
+>
 > 現在位置 $\Sigma_0$ から1つ目のサンプリング位置 $\Sigma_1$ への変換を ${}^0T_1$ とし， $\Sigma_1$ からターゲット座標 $\Sigma_t$ への変換を ${}^1S_t$ とする．
 >
 > 中心 $\boldsymbol{V}$ とズレ量 $\boldsymbol{d}$ を用いると， $\Sigma_t$ での中心座標 ${}^t\boldsymbol{V}$ は以下のように表現できる．
 >
 > $$
-> {}^t\boldsymbol{V} = \boldsymbol{V} + d
+> {}^t\boldsymbol{V} = \boldsymbol{V} + \boldsymbol{d}
 > $$
 >
 > このとき， $\Sigma_0$ から見た ${}^t\boldsymbol{V}$ である ${}^0\boldsymbol{V}$ は以下のように表現できる．
