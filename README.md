@@ -11,10 +11,10 @@
 
 ## 動作確認
 
-- [AviUtl ExEdit2 beta14](https://spring-fragrance.mints.ne.jp/aviutl/)
+- [AviUtl ExEdit2 beta21](https://spring-fragrance.mints.ne.jp/aviutl/)
 
 > [!CAUTION]
-> beta14以降必須．
+> beta20以降必須．
 
 ## 導入・削除・更新
 
@@ -24,9 +24,9 @@
 
 ### 導入
 
-1.  同梱の`*.anm2`と`*.dll`を`%ProgramData%`内の`aviutl2\\Script`フォルダまたはその子フォルダ (英語) に入れる．
+1.  同梱の`*.anm2`と`*.mod2`を`%ProgramData%`内の`aviutl2\Script`フォルダまたはその子フォルダに入れる．
 
-`beta4`以降では`aviutl2.exe`と同じ階層内の`data\\Script`フォルダ内でも可．
+`beta4`以降では`aviutl2.exe`と同じ階層内の`data\Script`フォルダ内でも可．
 
 ### 削除
 
@@ -36,162 +36,281 @@
 
 1.  導入したものを上書きする．
 
-## `ObjectMotionBlur@MotionBlur_K`との相違点
-
-このスクリプトは[ObjectMotionBlur@MotionBlur_K](https://github.com/korarei/AviUtl_MotionBlur_K_Script)の移植版である．いくつかの機能が削除，追加されている．
-
-### 削除項目
-
-計算が複雑になる上にそこまで正確でない項目を削除した．
-
-- Shutter Angle (`[360.0, 720.0]`): 非現実的な数値を認めない．
-
-- Shutter Phase: `-shutter_angle`で固定．
-
-### 追加項目
-
-新たに追加した機能．
-
-- Extrapolation (旧`Calc -1F & -2F`): かつては2次補間だけだったが1次補間できるようにした．
-
-- Mix (旧`Mix Original Image`): アルファ値にした．
-
-- 中心座標の移動に対してブラーをかけるようにした．
-
-基本的な使い方は同じだが，これらの機能差に注意してほしい．
-
 ## 使い方
 
-オブジェクトのX，Y，拡大率，Z軸回転，中心X，中心Yのトラックバーによる移動に関して線形的モーションブラーをかける．
+オブジェクトにこのスクリプトを追加することで，トラックバーによる移動に関して線形的にフレーム補間したモーションブラーをかける．
 
-また，Geometryのうち，ox，oy，zoom，rz，cx，cyに関してはデータを保持することにより，計算で扱うことが可能である． (基本効果系エフェクトやDelayMove，全自動リリックモーションなど)
+また，追加エフェクト，スクリプトによる座標変化はデータを保持することにより計算で扱うことが可能である． 
 
-- Shutter Angle
+### 対象項目
 
-  ブラー幅 (360度で1フレーム移動量と等しい)．
+出力項目 (標準描画等) の設定値は以下の7項目が対象．
 
-  初期値は`180.0`で一般的な値を採用している．
+拡大率と縦横比はX軸方向とY軸方向の拡大率として取得している．
 
-- Sample Limit
+- X
+- Y
+- 中心X
+- 中心Y
+- Z軸回転
+- 拡大率
+- 縦横比
 
-  描画精度．このスクリプトは移動量に応じた可変サンプル数を採用している．ここでは，そのサンプル数の上限値を設定する．PCの重さに関わるため適切に設定してほしい．
+オブジェクトの設定値 (基本効果やスクリプトなどの追加エフェクトによるもの) は以下の7項目が対象．
+
+これらの項目は`Geo Cache`が`Full`か`Minimal`の時に有効．
+
+- obj.ox
+- obj.oy
+- obj.cx
+- obj.cy
+- obj.rz
+- obj.sx
+- obj.sy
+
+### パラメータ
+
+#### Shutter Angle
+
+ブラー幅 (360度で1フレーム移動量と等しい)．
+
+初期値は`180.0`で一般的な値を採用している．
+
+#### Sample Limit
+
+描画精度．サンプル数の上限値を設定する．
+
+上げると描画が綺麗になる代わりに重くなる．一方，下げると描画が粗くなる代わりに軽くなる．
   
-  必要サンプル数はダイアログ内の`Print Information`を有効にするとコンソールで確認できる．
+必要サンプル数はダイアログ内の`Print Information`を有効にするとコンソールで確認できる．
 
-  最小必要サンプル数は`2`．
+初期値は`256`とやや小さい値にしている．
 
-  初期値は`256`とやや小さい値にしている．
+> [!Note]
+> `2`未満のときブラーは表示されない．
 
-- Preview Limit
+#### Preview Limit
 
-  プレビュー時の描画制度．`0`以外の値にすることで，編集時に描画制度を下げて軽量にすることができる．出力時は`Sample Limit`の値になる．
+プレビュー時の描画制度．`0`以外の値にすることで，編集時に描画制度を下げて軽量にすることができる．出力時は`Sample Limit`の値になる．
 
-  初期値は`0`でこの機能を無効にしている．
+初期値は`0`でこの機能を無効にしている．
 
-- Extrapolation
+#### Extrapolation
 
-  0フレームより前を仮想的に計算する．計算方法として以下の3つある．
+0フレームより前を仮想的に計算する．計算方法として以下の3つある．
 
-    - None (計算しない)
+- None (計算しない)
+- Linear (1次補間)
+- Quadratic (2次補間)
 
-    - Linear (1次補間)
+初期値は`Quadratic`
 
-    - Quadratic (2次補間)
+#### Resize
 
-  初期値は`Quadratic`
+サイズを変更．`ON`でブラーが見切れないようにする．
 
-- Resize
+初期値は`ON`
 
-  サイズを変更．`ON`でブラーが見切れないようにする．
+#### Geo Cache
 
-  初期値は`ON`
+エフェクトによる座標変化を計算に入れるかどうかを指定する．保存方法は以下の3つ．
 
-- Geo Cache
+- None (保存しない)
+- Full (全フレーム保存する)
+- Minimal (必要最低限だけ保存する)
 
-  スクリプトによる座標変化を計算に入れるかどうかを指定する．保存方法は以下の3つ．
+初期値は`None`
 
-  - None (保存しない)
+#### Cache Purge
 
-  - Full (全フレーム保存する)
+キャッシュ削除に関して以下の4つから設定する．
 
-  - Minimal (必要最低限だけ保存する)
+- None (特に何も行わない)
+- Auto (このオブジェクトの最終フレームでこのオブジェクトのデータのみ削除する)
+- All (スクリプトが読み込まれた時，すべて削除する)
+- Active (スクリプトが読み込まれた時，このオブジェクトのデータのみ削除する)
 
-  初期値は`None`
+初期値は`None`
 
-- Cache Control
+#### Mix
 
-  ジオメトリデータの扱いを指定する．コントロール方法は以下の4つ．
+元画像を元の位置に描画する．(アルファブレンド)
 
-  - Off (特に何も行わない)
+かつての標準モーションブラーエフェクトの`残像`のようなもの．
 
-  - Auto (オブジェクトの最終フレームに現在オブジェクトのデータのみ削除する)
+初期値は`0.0`
 
-  - All (次スクリプトが読み込まれた時，すべて削除する)
+#### Print Information
 
-  - Current (次スクリプトが読み込まれた時，現在オブジェクトのデータのみ削除する)
+コンソールに情報を表示する．
 
-  初期値は`Off`
+表示される情報は以下のとおり
 
-- Mix
+- Object ID (所謂`obj.id`．キャッシュはObject IDごとに保存される．)
+- Index (所謂`obj.index`．個別オブジェクトのインデックス．)
+- Required Samples (必要なサンプル数．これを目安に`Sample Limit`を設定してほしい．)
 
-  元画像を元の位置に描画する．(アルファブレンド)
+初期値は`OFF`
 
-  かつての標準モーションブラーエフェクトの`残像`のようなもの．
+#### PI
 
-  初期値は`0.0`
+パラメータインジェクション．
 
-- Print Information
+```lua
+{
+  shutter_angle = 180.0, -- 360.0を超える値も指定可能 (ただ伸ばすだけ)
+  render_sample_limit = 256,
+  preview_sample_limit = 0,
+  extrapolation = 2,
+  resize = true, -- booleanも可
+  geo_cache = 0,
+  cache_purge = 0,
+  mix = 0.0,
+  print_info = false, -- booleanも可
+}
+```
 
-  コンソールに情報を表示する．
+`{}`は既に挿入済みであるため，PI項目では中身のみ記載する．
 
-  表示される情報は以下のとおり
+## スクリプトモジュール
 
-  - Object ID (所謂`obj.id`．GeometryはObject IDごとに保存される．)
+### version 関数
 
-  - Index (所謂`obj.index`．個別オブジェクトのインデックス．)
+スクリプトモジュールのバージョンを返す．
 
-  - Required Samples (必要なサンプル数．これを目安に`Sample Limit`を設定してほしい．)
+#### 戻り値
 
-  初期値は`OFF`
+1. `version` (number) : バージョン情報 
 
-- PI
+### compute_motion 関数
 
-  パラメータインジェクション．
+座標データから同次変換行列等を求める．
 
-  ```lua
-  {
-    shutter_angle = 180.0,
-    render_sample_limit = 256,
-    preview_sample_limit = 0,
-    extrapolation = 2,
-    resize = true, -- booleanも可
-    geo_cache = 0,
-    cache_ctrl = 0,
-    mix = 0.0,
-    print_info = false, -- booleanも可
-  }
-  ```
+> [!CAUTION]
+> `obj.num`が1以上の場合にのみ使用可能．
 
-  `{}`は既に挿入済みであるため，PI項目では中身のみ記載する．
+#### 引数
+
+1. `params` (table) : 設定値
+1. `context` (table) : オブジェクトの情報等
+1. `xform_curr` (table) : 現在の描画基準座標
+1. `xform_prev` (table) : 過去の描画基準座標
+1. `geo_curr` (table) : 現在のオブジェクト設定値 (座標)
+1. `data` (userdata，option) : 汎用データ (64バイト)
+1. `size` (number, option) : 汎用データサイズ
+
+> [!Note]
+> `data`を渡すときは必ず`size`を渡す必要がある．
+
+#### 戻り値
+
+1. `maegin` (table) : 領域拡張量
+1. `samples` (number) : サンプリング数 (必要サンプル数より1小さい)
+1. `xform_matrix` (table) : 1つ目のサンプリング地点までの同次変換行列の逆行列
+1. `scaling_matrix` (table) : 1つ目のサンプリング地点でのスケーリング行列の逆行列
+1. `drift_vector` (tavle) : 1つ目のサンプリング地点での中心座標ずれの逆ベクトル
+
+> [!Note]
+> 行列，ベクトルは列優先で一次元配列である．
+>
+> 行列は3次元正方行列，ベクトルは3次元ベクトルである．
+>
+> `samples`が0のとき，単位行列，0ベクトルとなる．
+
+> [!Tips]
+> 現在位置 $\Sigma_0$ から1つ目のサンプリング位置 $\Sigma_1$ への変換を ${}^0T_1$ とし，$\Sigma_1$ からターゲット座標 $\Sigma_t$ への変換を ${}^1S_t$ とする．
+>
+> 中心 $\bm{V}$ とズレ量 $\bm{d}$ を用いると，$\Sigma_t$ での中心座標 ${}^t\bm{V}$ は以下のように表現できる．
+>
+> $$
+> {}^t\bm{V} = \bm{V} + d
+> $$
+>
+> このとき， $\Sigma_0$ から見た ${}^t\bm{V}$ である ${}^0\bm{V}$ は以下のように表現できる．
+>
+> $$
+> {}^0\bm{V} = {}^0T_1 {}^1S_t {}^t\bm{V}
+> $$
+>
+> 以上よりシェーダーではこの逆変換を行えばよいので，
+>
+> $$
+> {}^t\bm{V} = {}^1S_t^{-1} {}^0T_1^{-1} {}^0\bm{V} = {}^tS_1 {}^1T_0 {}^0\bm{V}
+> $$
+>
+> ここで， ${}^1T_0$ は`xform_matrix`， ${}^tS_1$ は`scaling_matrix`， $-\bm{d}$ は`drift_vector`である．
+
+#### テーブル
+
+```lua
+local params = {
+  amt = 1.0, -- shutter_angle / 360.0
+  smp_lim = 256,
+  ext = 2,
+  geo_cache = 0,
+  cache_purge = 0,
+  print_info = false
+}
+
+local context = {
+  name = "SCRIPT_NAME",
+  w = obj.w,
+  h = obj.h,
+  cx = obj.getvalue("cx") + obj.cx,
+  cy = obj.getvalue("cy") + obj.cy,
+  id = obj.id,
+  idx = obj.index,
+  num = obj.num,
+  frame = obj.frame,
+  range = obj.totalframe
+}
+
+local xform = {
+  cx = obj.getvalue("cx"),
+  cy = obj.getvalue("cy"),
+  x = obj.getvalue("x"),
+  y = obj.getvalue("y"),
+  rz = obj.getvalue("rz"),
+  sx = obj.getvalue("sx"),
+  sy = obj.getvalue("sy")
+}
+
+local geo = {
+  cx = obj.cx,
+  cy = obj.cy,
+  ox = obj.ox,
+  oy = obj.oy,
+  rz = obj.rz,
+  sx = obj.sx,
+  sy = obj.sy
+}
+
+local margin = {
+  left = 0,
+  top = 0,
+  right = 0,
+  bottom = 0
+}
+```
 
 ##  ビルド方法
 
-`.github\\workflows`内の`releaser.yml`に記載．
+`.github/workflows`内の`releaser.yml`に記載．
 
 ## License
 LICENSEファイルに記載．
 
 ## Credits
 
-### LuaJIT 2.1
+### AviUtl ExEdit2 Plugin SDK
 
-https://luajit.org/
+https://spring-fragrance.mints.ne.jp/aviutl/
 
 ---
 
-LuaJIT -- a Just-In-Time Compiler for Lua. https://luajit.org/
+The MIT License
 
-Copyright (C) 2005-2025 Mike Pall. All rights reserved.
+Copyright (c) 2025 Kenkun
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -205,47 +324,19 @@ all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
-
-[ MIT license: https://www.opensource.org/licenses/mit-license.php ]
-
----
-
-[ LuaJIT includes code from Lua 5.1/5.2, which has this license statement: ]
-
-Copyright (C) 1994-2012 Lua.org, PUC-Rio.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
----
-
-[ LuaJIT includes code from dlmalloc, which has this license statement: ]
-
-This is a version (aka dlmalloc) of malloc/free/realloc written by
-Doug Lea and released to the public domain, as explained at
-https://creativecommons.org/licenses/publicdomain
 
 ## Change Log
+- **v1.1.0**
+  - `.mod2`化．
+  - 縦横比変形に対応．
+  - 外挿計算結果をプロジェクトファイルに埋め込むようにした．
+  - `Cache Control`を`Cache Purge`に変更．(破壊的)
+
 - **v1.0.0**
   - `Object ID`をスクリプト側で入手できるように変更．
   - `Print Information`で表示される`Required Samples`が1少なかった問題の解決．
