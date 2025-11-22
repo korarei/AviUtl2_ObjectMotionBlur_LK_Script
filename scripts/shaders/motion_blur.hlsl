@@ -32,7 +32,7 @@ float4 motion_blur(PS_Input input) : SV_Target {
     pose._13_23_33 = float3(0.0, 0.0, 1.0);
 
     float4 col = src.Load(int3(input.pos.xy, 0));
-    for (uint i = 1; i <= count; ++i) {
+    for (uint i = 1; i < count; ++i) {
         pos = mul(xform, pos);
         float2 uv = to_uv(mul(scl, pos) + d);
         col += src.Sample(smp, uv);
@@ -42,6 +42,6 @@ float4 motion_blur(PS_Input input) : SV_Target {
         xform._13_23_33 = mul(pose, xform._13_23_33);
     }
 
-    col = saturate(col * rcp(n + 1.0));
+    col = col * rcp(n);
     return col + src.Load(int3(input.pos.xy, 0)) * (1.0 - col.a) * mix;
 }
