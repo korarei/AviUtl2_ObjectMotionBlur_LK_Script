@@ -218,27 +218,27 @@
 > `samples`が0のとき，単位行列，0ベクトルとなる．
 
 > [!TIP]
-> 現在位置 $\Sigma_0$ から1つ目のサンプリング位置 $\Sigma_1$ への変換を ${}^0T_1$ とし，$\Sigma_1$ からターゲット座標 $\Sigma_t$ への変換を ${}^1S_t$ とする．
+> 現在位置 $\Sigma_0$ から1つ目のサンプリング位置 $\Sigma_1$ への変換を ${}^0T_1$ とし， $\Sigma_1$ からターゲット座標 $\Sigma_t$ への変換を ${}^1S_t$ とする．
 >
-> 中心 $\bm{V}$ とズレ量 $\bm{d}$ を用いると，$\Sigma_t$ での中心座標 ${}^t\bm{V}$ は以下のように表現できる．
->
-> $$
-> {}^t\bm{V} = \bm{V} + d
-> $$
->
-> このとき， $\Sigma_0$ から見た ${}^t\bm{V}$ である ${}^0\bm{V}$ は以下のように表現できる．
+> 中心 $\boldsymbol{V}$ とズレ量 $\boldsymbol{d}$ を用いると， $\Sigma_t$ での中心座標 ${}^t\boldsymbol{V}$ は以下のように表現できる．
 >
 > $$
-> {}^0\bm{V} = {}^0T_1 {}^1S_t {}^t\bm{V}
+> {}^t\boldsymbol{V} = \boldsymbol{V} + d
+> $$
+>
+> このとき， $\Sigma_0$ から見た ${}^t\boldsymbol{V}$ である ${}^0\boldsymbol{V}$ は以下のように表現できる．
+>
+> $$
+> {}^0\boldsymbol{V} = {}^0T_1 {}^1S_t {}^t\boldsymbol{V}
 > $$
 >
 > 以上よりシェーダーではこの逆変換を行えばよいので，
 >
 > $$
-> {}^t\bm{V} = {}^1S_t^{-1} {}^0T_1^{-1} {}^0\bm{V} = {}^tS_1 {}^1T_0 {}^0\bm{V}
+> {}^t\boldsymbol{V} = {}^1S_t^{-1} {}^0T_1^{-1} {}^0\boldsymbol{V} = {}^tS_1 {}^1T_0 {}^0\boldsymbol{V}
 > $$
 >
-> ここで， ${}^1T_0$ は`xform_matrix`， ${}^tS_1$ は`scaling_matrix`， $-\bm{d}$ は`drift_vector`である．
+> ここで， ${}^1T_0$ は`xform_matrix`， ${}^tS_1$ は`scaling_matrix`， $-\boldsymbol{d}$ は`drift_vector`である．
 
 #### テーブル
 
