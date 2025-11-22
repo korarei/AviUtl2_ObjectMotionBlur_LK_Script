@@ -35,8 +35,8 @@ local smp_lim_r = tonumber(_0.render_sample_limit) or obj.track3
 local smp_lim_p = tonumber(_0.preview_sample_limit) or obj.track4
 local ext = tonumber(_0.extrapolation) or s0 s0 = nil
 local resize = tobool(_0.resize, obj.check0)
-local geo_cache = tonumber(_0.geo_cache or s1) s1 = nil
-local cache_purge = tonumber(_0.cache_purge or s2) s2 = nil
+local geo_cache = tonumber(_0.geo_cache) or s1 s1 = nil
+local cache_purge = tonumber(_0.cache_purge) or s2 s2 = nil
 local mix = clamp(tonumber(_0.mix) or obj.track5, 0.0, 100.0) * 0.01
 local print_info = tobool(_0.print_info, obj.check1)
 _0 = nil
@@ -128,7 +128,7 @@ if (resize) then
     obj.cy = obj.cy + (margin.top - margin.bottom) * 0.5
 end
 
-if (smp > 0) then
+if (smp > 1) then
     obj.pixelshader("motion_blur", "object", "object", {
         xform[1], xform[2], xform[3], 0.0,
         xform[4], xform[5], xform[6], 0.0,
