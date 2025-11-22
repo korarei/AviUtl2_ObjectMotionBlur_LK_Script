@@ -10,17 +10,18 @@ cbuffer params : register(b0) {
     float mix;
 };
 
+static const float2 texel = rcp(res);
+
 struct PS_Input {
     float4 pos : SV_Position;
     float2 uv : TEXCOORD;
 };
 
-inline float2 to_uv(float3 pos, float2 texel) {
+inline float2 to_uv(float3 pos) {
     return (pos.xy + pivot) * texel;
 }
 
 float4 motion_blur(PS_Input input) : SV_Target {
-    const float2 texel = rcp(res);
     const uint count = uint(n);
 
     float3 pos = float3(mad(input.uv, res, -pivot), 1.0);
@@ -33,7 +34,7 @@ float4 motion_blur(PS_Input input) : SV_Target {
     float4 col = src.Load(int3(input.pos.xy, 0));
     for (uint i = 1; i <= count; ++i) {
         pos = mul(xform, pos);
-        float2 uv = to_uv(mul(scl, pos) + d, texel);
+        float2 uv = to_uv(mul(scl, pos) + d);
         col += src.Sample(smp, uv);
 
         d += drift;

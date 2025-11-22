@@ -109,8 +109,8 @@ load_param(SCRIPT_MODULE_PARAM *p, int idx) {
     auto to_int = [&](const char *key) { return p->get_param_table_int(idx, key); };
     auto to_bool = [&](const char *key) { return p->get_param_table_boolean(idx, key); };
 
-    return {to_num("amt"),       to_int("smp_lim"),    to_int("ext"),
-            to_int("geo_cache"), to_int("cache_ctrl"), to_bool("print_info")};
+    return Param(to_num("amt"), to_int("smp_lim"), to_int("ext"), to_int("geo_cache"), to_int("cache_purge"),
+                 to_bool("print_info"));
 }
 
 static Context
