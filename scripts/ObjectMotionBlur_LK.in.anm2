@@ -30,13 +30,13 @@ local function clamp(v, min, max)
 end
 
 _0 = _0 or {}
-local amt = math.max(tonumber(_0.shutter_angle) or obj.track2, 0.0) / 360.0
-local smp_lim_r = math.max(tonumber(_0.render_sample_limit) or obj.track3, 1)
-local smp_lim_p = math.max(tonumber(_0.preview_sample_limit) or obj.track4, 0)
-local ext = clamp(tonumber(_0.extrapolation) or s0, 0, 2) s0 = nil
+local amt = tonumber(_0.shutter_angle) or obj.track2 / 360.0
+local smp_lim_r = tonumber(_0.render_sample_limit) or obj.track3
+local smp_lim_p = tonumber(_0.preview_sample_limit) or obj.track4
+local ext = tonumber(_0.extrapolation) or s0 s0 = nil
 local resize = tobool(_0.resize, obj.check0)
-local geo_cache = clamp(tonumber(_0.geo_cache or s1), 0, 2) s1 = nil
-local cache_purge = clamp(tonumber(_0.cache_purge or s2), 0, 3) s2 = nil
+local geo_cache = tonumber(_0.geo_cache or s1) s1 = nil
+local cache_purge = tonumber(_0.cache_purge or s2) s2 = nil
 local mix = clamp(tonumber(_0.mix) or obj.track5, 0.0, 100.0) * 0.01
 local print_info = tobool(_0.print_info, obj.check1)
 _0 = nil
@@ -54,7 +54,7 @@ local params = {
     smp_lim = (obj.getinfo("saving") or smp_lim_p < 1) and smp_lim_r or smp_lim_p,
     ext = ext,
     geo_cache = geo_cache,
-    cache_ctrl = cache_purge,
+    cache_purge = cache_purge,
     print_info = print_info
 }
 

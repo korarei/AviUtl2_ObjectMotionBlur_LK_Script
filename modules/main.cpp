@@ -109,8 +109,8 @@ load_param(SCRIPT_MODULE_PARAM *p, int idx) {
     auto to_int = [&](const char *key) { return p->get_param_table_int(idx, key); };
     auto to_bool = [&](const char *key) { return p->get_param_table_boolean(idx, key); };
 
-    return {to_num("amt"),       to_int("smp_lim"),    to_int("ext"),
-            to_int("geo_cache"), to_int("cache_ctrl"), to_bool("print_info")};
+    return Param(to_num("amt"), to_int("smp_lim"), to_int("ext"), to_int("geo_cache"), to_int("cache_purge"),
+                 to_bool("print_info"));
 }
 
 static Context
@@ -218,7 +218,7 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
 
     LPCSTR keys[] = {"left", "top", "right", "bottom"};
     p->push_result_table_double(keys, margin.data(), static_cast<int>(margin.size()));
-    p->push_result_int(smp);
+    p->push_result_int(smp + 1);
     p->push_result_array_double(motion.xform.data(), static_cast<int>(motion.xform.size()));
     p->push_result_array_double(motion.scale.matrix().data(), static_cast<int>(motion.scale.size()));
     p->push_result_array_double(motion.drift.data(), static_cast<int>(motion.drift.size()));
