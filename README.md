@@ -204,7 +204,7 @@
 
 #### 戻り値
 
-1. `maegin` (table) : 領域拡張量
+1. `margin` (table) : 領域拡張量
 1. `samples` (number) : サンプリング数
 1. `xform_matrix` (table) : 2つ目のサンプリング地点までの同次変換行列の逆行列
 1. `scaling_matrix` (table) : 2つ目のサンプリング地点でのスケーリング行列の逆行列
