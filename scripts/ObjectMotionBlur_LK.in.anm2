@@ -1,0 +1,145 @@
+--information:${SCRIPT_NAME} ${VERSION} by ${AUTHOR}
+--label:${LABEL}
+--track2:Shutter Angle,0,360,180
+--track3:Sample Limit,1,4096,256,1
+--track4:Preview Limit,0,4096,0,1
+--select@s0:Extrapolation=2,None=0,Linear=1,Quadratic=2
+--check0:Resize,1
+--select@s1:Geo Cache,None=0,Full=1,Minimal=2
+--select@s2:Cache Purge,None=0,Auto=1,All=2,Active=3
+--track5:Mix,0,100,0,0.01
+--check1:Print Information,0
+--value@_0:PI,{}
+--data@geo:64
+--[[pixelshader@motion_blur:
+--#include "shaders/motion_blur.hlsl"
+]]
+
+local function tobool(v, d)
+    if (type(v) == "boolean") then
+        return v
+    elseif (type(v) == "number") then
+        return v ~= 0
+    else
+        return d
+    end
+end
+
+local function clamp(v, min, max)
+    return math.min(max, math.max(v, min))
+end
+
+_0 = _0 or {}
+local amt = tonumber(_0.shutter_angle) or obj.track2 / 360.0
+local smp_lim_r = tonumber(_0.render_sample_limit) or obj.track3
+local smp_lim_p = tonumber(_0.preview_sample_limit) or obj.track4
+local ext = tonumber(_0.extrapolation) or s0 s0 = nil
+local resize = tobool(_0.resize, obj.check0)
+local geo_cache = tonumber(_0.geo_cache) or s1 s1 = nil
+local cache_purge = tonumber(_0.cache_purge) or s2 s2 = nil
+local mix = clamp(tonumber(_0.mix) or obj.track5, 0.0, 100.0) * 0.01
+local print_info = tobool(_0.print_info, obj.check1)
+_0 = nil
+
+if (amt < 1.0e-4 or obj.index >= obj.num) then
+    return
+end
+
+local gv = obj.getvalue
+local dt = 1.0 / obj.framerate
+local cx, cy = gv("cx"), gv("cy")
+
+local params = {
+    amt = amt,
+    smp_lim = (obj.getinfo("saving") or smp_lim_p < 1) and smp_lim_r or smp_lim_p,
+    ext = ext,
+    geo_cache = geo_cache,
+    cache_purge = cache_purge,
+    print_info = print_info
+}
+
+local context = {
+    name = "${SCRIPT_NAME}",
+    w = obj.w,
+    h = obj.h,
+    cx = cx + obj.cx,
+    cy = cy + obj.cy,
+    id = obj.id,
+    idx = obj.index,
+    num = obj.num,
+    frame = obj.frame,
+    range = obj.totalframe
+}
+
+local geo_curr = {
+    cx = obj.cx,
+    cy = obj.cy,
+    ox = obj.ox,
+    oy = obj.oy,
+    rz = obj.rz,
+    sx = obj.sx,
+    sy = obj.sy
+}
+
+local xform_curr = {
+    cx = cx,
+    cy = cy,
+    x = gv("x"),
+    y = gv("y"),
+    rz = gv("rz"),
+    sx = gv("sx"),
+    sy = gv("sy")
+}
+
+local xform_prev = {}
+if (obj.frame == 0) then
+    if (ext == 1) then
+        for k, v in pairs(xform_curr) do
+            xform_prev[k] = v * 2.0 - gv(k, dt)
+        end
+    elseif (ext == 2) then
+        local dt2 = dt * 2.0
+        for k, v in pairs(xform_curr) do
+            xform_prev[k] = v * 3.0 - gv(k, dt) * 3.0 + gv(k, dt2)
+        end
+    else
+        xform_prev = xform_curr
+    end
+else
+    local t = obj.time - dt
+    xform_prev = {
+        cx = gv("cx", t),
+        cy = gv("cy", t),
+        x = gv("x", t),
+        y = gv("y", t),
+        rz = gv("rz", t),
+        sx = gv("sx", t),
+        sy = gv("sy", t)
+    }
+end
+
+local lib = obj.module("ObjectMotionBlur_LK")
+local data = obj.data("geo")
+local margin, smp, xform, scale, drift = lib.compute_motion(params, context, xform_curr, xform_prev, geo_curr, data, 64)
+
+if (resize) then
+    obj.effect("領域拡張", "上", margin.top, "下", margin.bottom, "左", margin.left, "右", margin.right)
+    obj.cx = obj.cx + (margin.left - margin.right) * 0.5
+    obj.cy = obj.cy + (margin.top - margin.bottom) * 0.5
+end
+
+if (smp > 1) then
+    obj.pixelshader("motion_blur", "object", "object", {
+        xform[1], xform[2], xform[3], 0.0,
+        xform[4], xform[5], xform[6], 0.0,
+        xform[7], xform[8], xform[9], 0.0,
+        scale[1], scale[2], scale[3], 0.0,
+        scale[4], scale[5], scale[6], 0.0,
+        scale[7], scale[8], scale[9], 0.0,
+        drift[1], drift[2], drift[3], 0.0,
+        obj.w, obj.h,
+        obj.w * 0.5 + cx + obj.cx, obj.h * 0.5 + cy + obj.cy,
+        smp,
+        mix
+    }, "copy", "clip")
+end

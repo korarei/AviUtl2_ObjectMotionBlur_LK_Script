@@ -1,3 +1,0 @@
-LIBRARY "ObjectMotionBlur_LK"
-EXPORTS
-    luaopen_ObjectMotionBlur_LK

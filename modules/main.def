@@ -1,0 +1,4 @@
+EXPORTS
+    InitializeLogger
+    InitializePlugin
+    GetScriptModuleTable

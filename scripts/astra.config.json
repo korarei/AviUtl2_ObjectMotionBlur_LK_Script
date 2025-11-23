@@ -1,0 +1,39 @@
+{
+    "project": {
+        "name": "ObjectMotionBlur_LK",
+        "author": "Korarei"
+    },
+    "build": {
+        "directory": "build",
+        "scripts": [
+            {
+                "suffix": ".anm2",
+                "source": {
+                    "variables": {
+                        "LABEL": "ぼかし"
+                    }
+                }
+            }
+        ],
+        "modules": [
+            {
+                "path": "../modules/build/Release/*.mod2"
+            }
+        ]
+    },
+    "install": {
+        "directory": "C:/ProgramData/aviutl2/Script"
+    },
+    "release": {
+        "directory": "release",
+        "archive": {
+            "files": [
+                "../README.md",
+                "../LICENSE"
+            ]
+        },
+        "notes": {
+            "source": "../README.md"
+        }
+    }
+}
