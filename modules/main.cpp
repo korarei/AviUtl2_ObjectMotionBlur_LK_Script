@@ -89,7 +89,7 @@ cleanup_geo(AtlasOct &atlas, const Param &param, const Context &context) {
 
     switch (param.cache_purge) {
         case 1:
-            if (context.frame != context.range - 1)
+            if (context.frame == context.range - 1)
                 atlas.clear(context.id);
             return;
         case 2:
