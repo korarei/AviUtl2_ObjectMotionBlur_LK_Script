@@ -11,7 +11,7 @@
 
 ## 動作確認
 
-- [AviUtl ExEdit2 beta21](https://spring-fragrance.mints.ne.jp/aviutl/)
+- [AviUtl ExEdit2 beta22](https://spring-fragrance.mints.ne.jp/aviutl/)
 
 > [!CAUTION]
 > beta20以降必須．
@@ -91,7 +91,7 @@
 
 #### Preview Limit
 
-プレビュー時の描画制度．`0`以外の値にすることで，編集時に描画制度を下げて軽量にすることができる．出力時は`Sample Limit`の値になる．
+プレビュー時の描画精度．`0`以外の値にすることで，編集時に描画制度を下げて軽量にすることができる．出力時は`Sample Limit`の値になる．
 
 初期値は`0`でこの機能を無効にしている．
 
@@ -110,6 +110,14 @@
 サイズを変更．`ON`でブラーが見切れないようにする．
 
 初期値は`ON`
+
+#### Mix
+
+元画像を元の位置に描画する．(アルファブレンド)
+
+かつての標準モーションブラーエフェクトの`残像`のようなもの．
+
+初期値は`0.0`
 
 #### Geo Cache
 
@@ -131,14 +139,6 @@
 - Active (スクリプトが読み込まれた時，このオブジェクトのデータのみ削除する)
 
 初期値は`None`
-
-#### Mix
-
-元画像を元の位置に描画する．(アルファブレンド)
-
-かつての標準モーションブラーエフェクトの`残像`のようなもの．
-
-初期値は`0.0`
 
 #### Print Information
 
@@ -255,7 +255,7 @@ local params = {
 }
 
 local context = {
-  name = "SCRIPT_NAME",
+  name = "SCRIPT_NAME", -- 独自の名前を入力
   w = obj.w,
   h = obj.h,
   cx = obj.getvalue("cx") + obj.cx,
@@ -333,6 +333,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ## Change Log
+- **v1.1.1**
+  - UIのグルーピング． (beta22以降必要)
+  - `Cache Purge`が`Auto`のときの条件分岐を修正．
+
 - **v1.1.0**
   - `.mod2`化．
   - 縦横比変形に対応．
