@@ -28,9 +28,6 @@ static LOG_HANDLE *logger;
 
 static void
 extrapolate(AtlasOct &atlas, const Param &param, const Context &context, Flow &flow) noexcept {
-    if (!param.ext)
-        return;
-
     bool valid = true;
     std::array<const Geo *, 2> geos{};
 
@@ -83,13 +80,10 @@ resize(const Context &context, const Delta &delta, double amt) noexcept {
 }
 
 static void
-cleanup_geo(AtlasOct &atlas, const Param &param, const Context &context) {
-    if (context.idx != context.num - 1)
-        return;
-
+purge_cache(AtlasOct &atlas, const Param &param, const Context &context) {
     switch (param.cache_purge) {
         case 1:
-            if (context.frame != context.range - 1)
+            if (context.frame == context.range - 1)
                 atlas.clear(context.id);
             return;
         case 2:
@@ -181,7 +175,7 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
         atlas.overwrite(context.id, context.idx, context.frame + 1, *flow.geo.curr);
 
     if (param.geo_cache) {
-        if (!context.frame)
+        if (!context.frame && param.ext)
             extrapolate(atlas, param, context, flow);
         else if (auto g = atlas.read(context.id, context.idx, save_ed ? 1 : context.frame))
             flow.geo.prev = g;
@@ -200,7 +194,8 @@ compute_motion(SCRIPT_MODULE_PARAM *p) {
     if (save_ed)
         atlas.write(context.id, context.idx, 1, *flow.geo.curr);
 
-    cleanup_geo(atlas, param, context);
+    if (context.idx == context.num - 1 && param.cache_purge)
+        purge_cache(atlas, param, context);
 
     if (param.print_info) {
         std::wstring info = std::format(

@@ -5,9 +5,11 @@
 --track4:Preview Limit,0,4096,0,1
 --select@s0:Extrapolation=2,None=0,Linear=1,Quadratic=2
 --check0:Resize,1
+--track5:Mix,0,100,0,0.01
+--group:Cache Settings
 --select@s1:Geo Cache,None=0,Full=1,Minimal=2
 --select@s2:Cache Purge,None=0,Auto=1,All=2,Active=3
---track5:Mix,0,100,0,0.01
+--group:Additional Options,false
 --check1:Print Information,0
 --value@_0:PI,{}
 --data@geo:64
