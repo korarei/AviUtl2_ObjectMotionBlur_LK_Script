@@ -1,0 +1,56 @@
+If:
+  PathMatch: extern/.*
+
+Diagnostics:
+  Suppress: "*"
+
+---
+Diagnostics:
+  ClangTidy:
+    Add:
+      - readability-*
+      - bugprone-*
+      - modernize-*
+      - performance-*
+      - clang-analyzer-*
+      - google-*
+      - misc-redundant-expression
+      - misc-unused-using-decls
+
+    Remove:
+      - readability-uppercase-literal-suffix
+      - readability-magic-numbers
+      - readability-isolate-declaration
+      - readability-identifier-length
+      - readability-avoid-nested-conditional-operator
+      - modernize-use-auto
+      - modernize-avoid-c-arrays
+      - modernize-loop-convert
+      - modernize-use-trailing-return-type
+      - modernize-use-designated-initializers
+      - google-readability-todo
+
+    CheckOptions:
+      readability-identifier-naming.ClassCase: PascalCase
+      readability-identifier-naming.StructCase: PascalCase
+
+      readability-identifier-naming.FunctionCase: PascalCase
+
+      readability-identifier-naming.VariableCase: lower_case
+      readability-identifier-naming.ParameterCase: lower_case
+
+      readability-identifier-naming.ClassMemberCase: lower_case
+      readability-identifier-naming.ClassMemberSuffix: _
+
+      readability-identifier-naming.StructMemberCase: lower_case
+
+      readability-identifier-naming.LocalConstantCase: lower_case
+      readability-identifier-naming.ConstantCase: CamelCase
+      readability-identifier-naming.ConstantPrefix: k
+
+      readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+
+  UnusedIncludes: Strict
+
+Completion:
+  HeaderInsertion: Never
