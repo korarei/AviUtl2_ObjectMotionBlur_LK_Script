@@ -6,4 +6,5 @@
 
 namespace blur::object {
 void Init(HOST_APP_TABLE* host);
+void Deinit();
 }  // namespace blur::object

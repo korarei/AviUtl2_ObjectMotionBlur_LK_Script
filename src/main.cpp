@@ -5,6 +5,8 @@
 
 #include "intern/aviutl/aviutl.hpp"
 
+#include "object/object.hpp"
+
 #include "api.h"
 
 #ifndef VERSION
@@ -29,9 +31,13 @@ API void InitializeLogger(LOG_HANDLE* logger) { blur::aviutl::Logger::Init(logge
 
 API bool InitializePlugin(DWORD version) { return version >= RequiredVersion(); }
 
-API void UninitializePlugin() {}
+API void UninitializePlugin() { blur::object::Deinit(); }
 
 API COMMON_PLUGIN_TABLE* GetCommonPluginTable() { return &info; }
 
-API void RegisterPlugin(HOST_APP_TABLE* host) { blur::aviutl::Context::Init(host->create_edit_handle()); }
+API void RegisterPlugin(HOST_APP_TABLE* host) {
+    blur::aviutl::Context::Init(host->create_edit_handle());
+
+    blur::object::Init(host);
+}
 }
