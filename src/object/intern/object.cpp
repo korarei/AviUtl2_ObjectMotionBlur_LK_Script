@@ -102,7 +102,7 @@ cache::Store store{};
         return {};
     }
 
-    std::vector<OBJECT_HANDLE> candidates{};
+    std::vector<EFFECT_HANDLE> candidates{};
     candidates.reserve(ctx->object->layer);
 
     {
@@ -115,18 +115,20 @@ cache::Store store{};
                 continue;
             }
 
-            const auto* const candidate = ctx->edit->get_object_item_value(handle, L"グループ制御", L"対象レイヤー数");
+            auto* const candidate = ctx->edit->find_effect(handle, L"グループ制御");
 
-            if (candidate == nullptr) {
+            if (candidate == nullptr || !ctx->edit->get_effect_enable(candidate)) {
                 continue;
             }
+
+            const auto* const range_str = ctx->edit->get_effect_item_value(candidate, L"対象レイヤー数");
 
             int range;
-            if (!string::ToNumber(candidate, range) || (range != 0 && range < layer - i)) {
+            if (range_str == nullptr || !string::ToNumber(range_str, range) || (range != 0 && range < layer - i)) {
                 continue;
             }
 
-            candidates.push_back(handle);
+            candidates.push_back(candidate);
             layer = i;
         }
     }
@@ -143,15 +145,15 @@ cache::Store store{};
 
             double v;
 
-            if (ctx->edit->get_object_track_value(handle, L"グループ制御", L"X", point, &v)) {
+            if (ctx->edit->get_effect_track_value(handle, L"X", point, &v)) {
                 transform.position.x() = static_cast<float>(v);
             }
 
-            if (ctx->edit->get_object_track_value(handle, L"グループ制御", L"Y", point, &v)) {
+            if (ctx->edit->get_effect_track_value(handle, L"Y", point, &v)) {
                 transform.position.y() = static_cast<float>(v);
             }
 
-            if (ctx->edit->get_object_track_value(handle, L"グループ制御", L"拡大率", point, &v)) {
+            if (ctx->edit->get_effect_track_value(handle, L"拡大率", point, &v)) {
                 if (v < 0.0) {
                     aul::Logger::Warning(L"Negative scaling is not supported");
                     transform.scale = Eigen::Vector2f::Constant(0.0f);
@@ -160,7 +162,7 @@ cache::Store store{};
                 }
             }
 
-            if (ctx->edit->get_object_track_value(handle, L"グループ制御", L"Z軸回転", point, &v)) {
+            if (ctx->edit->get_effect_track_value(handle, L"Z軸回転", point, &v)) {
                 transform.rotation = ToRadians(static_cast<float>(v));
             }
 
@@ -363,10 +365,10 @@ cache::Store store{};
 
         const Eigen::Vector2f pivot = lerp(object.state.current.pivot, object.state.previous.pivot, t);
 
-        const Eigen::Vector2f pos = curr_to_prev * -pivot + object.state.current.pivot;
-        const Eigen::Vector2f size = curr_to_prev.linear().cwiseAbs() * object.size;
-
-        const Eigen::Vector2f end = pos + size;
+        const Eigen::Vector2f origin = curr_to_prev * -pivot + object.state.current.pivot;
+        const auto linear = curr_to_prev.linear();
+        const Eigen::Vector2f pos = origin + linear.cwiseMin(0.0f) * object.size;
+        const Eigen::Vector2f end = origin + linear.cwiseMax(0.0f) * object.size;
 
         box.min.min() = box.min.min().cwiseMax(pos);
         box.min.max() = box.min.max().cwiseMin(end);
