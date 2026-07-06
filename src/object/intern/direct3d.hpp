@@ -15,11 +15,9 @@ class Renderer {
   public:
     using Result = std::expected<void, std::wstring>;
 
-    struct alignas(16) Transform {
-        float position[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        float scale[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-        float rotation[2] = {0.0f, 0.0f};
-        float padding[2] = {0.0f, 0.0f};
+    struct alignas(16) SampleAffine {
+        float row0[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+        float row1[4] = {0.0f, 1.0f, 0.0f, 0.0f};
     };
 
     struct alignas(16) Param {
@@ -40,7 +38,7 @@ class Renderer {
         Context& operator=(Context&&) = delete;
 
         [[nodiscard]] Result Draw(ID3D11Texture2D* dst, float w, float h, ID3D11Texture2D* src,
-                                  const std::vector<Transform>& xforms, const Param& param) const;
+                                  const std::vector<SampleAffine>& xforms, const Param& param) const;
 
       private:
         friend class Renderer;

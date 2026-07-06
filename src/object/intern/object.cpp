@@ -382,6 +382,47 @@ cache::Store store{};
     return box;
 }
 
+[[nodiscard]] std::vector<d3d::Renderer::SampleAffine> CreateSampleAffines(const Object& object, float amount,
+                                                                           int samples) {
+    auto lerp = [](const Eigen::Vector2f& a, const Eigen::Vector2f& b, float t) { return a + (b - a) * t; };
+
+    const float step = amount / static_cast<float>(samples - 1);
+    std::vector<d3d::Renderer::SampleAffine> xforms(samples - 1);
+
+    for (int i = 1; i < samples; ++i) {
+        const float t = step * static_cast<float>(i);
+        Eigen::Affine2f transform = Eigen::Affine2f::Identity();
+
+        for (size_t j = 0uz; j < object.state.size; ++j) {
+            const auto& curr = object.state.current.transforms[j];
+            const auto& prev = object.state.previous.transforms[j];
+
+            const Eigen::Vector2f position = lerp(curr.position, prev.position, t);
+            const Eigen::Vector2f scale = lerp(curr.scale.cwiseInverse(), prev.scale.cwiseInverse(), t);
+            const float angle = std::lerp(curr.rotation, prev.rotation, t);
+            const Eigen::Matrix2f linear = scale.asDiagonal() * Eigen::Rotation2Df(-angle).toRotationMatrix();
+
+            Eigen::Affine2f xform = Eigen::Affine2f::Identity();
+            xform.linear() = linear;
+            xform.translation() = linear * -position;
+
+            transform = xform * transform;
+        }
+
+        transform = Eigen::Translation2f(lerp(object.state.current.pivot, object.state.previous.pivot, t)) * transform;
+
+        auto& xform = xforms[static_cast<size_t>(i - 1)];
+        xform.row0[0] = transform(0, 0);
+        xform.row0[1] = transform(0, 1);
+        xform.row0[2] = transform(0, 2);
+        xform.row1[0] = transform(1, 0);
+        xform.row1[1] = transform(1, 1);
+        xform.row1[2] = transform(1, 2);
+    }
+
+    return xforms;
+}
+
 bool Apply(FILTER_PROC_VIDEO* ctx) {
     namespace props = properties;
 
@@ -455,23 +496,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             return false;
         }
 
-        std::vector<d3d::Renderer::Transform> xforms(object->state.size);
-
-        for (size_t i = 0uz; i < object->state.size; ++i) {
-            const auto& curr = object->state.current.transforms[i];
-            const auto& prev = object->state.previous.transforms[i];
-
-            auto& xform = xforms[i];
-
-            Eigen::Map<Eigen::Vector2f>(&xform.position[0]) = curr.position;
-            Eigen::Map<Eigen::Vector2f>(&xform.position[2]) = prev.position;
-
-            Eigen::Map<Eigen::Vector2f>(&xform.scale[0]) = curr.scale;
-            Eigen::Map<Eigen::Vector2f>(&xform.scale[2]) = prev.scale;
-
-            xform.rotation[0] = curr.rotation;
-            xform.rotation[1] = prev.rotation;
-        };
+        const auto xforms = CreateSampleAffines(*object, amount, samples);
 
         const float mix = std::clamp(static_cast<float>(properties::compositing::mix.value) * 0.02f, 0.0f, 2.0f);
 

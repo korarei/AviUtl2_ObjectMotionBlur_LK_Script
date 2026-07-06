@@ -5,7 +5,7 @@
 
 namespace blur::object::direct3d {
 Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* dst, float w, float h, ID3D11Texture2D* src,
-                                         const std::vector<Transform>& xforms, const Param& param) const {
+                                         const std::vector<SampleAffine>& xforms, const Param& param) const {
     static constexpr ID3D11ShaderResourceView* null_srvs[2] = {nullptr, nullptr};
     constexpr ID3D11RenderTargetView* null_rtv = nullptr;
 
@@ -44,16 +44,16 @@ Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* dst, float w, float h,
                 return std::unexpected(L"Failed to map structured buffer");
             }
 
-            std::memcpy(mapped.pData, xforms.data(), xforms.size() * sizeof(Transform));
+            std::memcpy(mapped.pData, xforms.data(), xforms.size() * sizeof(SampleAffine));
             owner_.ctx_->Unmap(owner_.xforms_.buffer.Get(), 0u);
         } else {
             const D3D11_BUFFER_DESC desc{
-                .ByteWidth = static_cast<uint32_t>(xforms.size() * sizeof(Transform)),
+                .ByteWidth = static_cast<uint32_t>(xforms.size() * sizeof(SampleAffine)),
                 .Usage = D3D11_USAGE_DYNAMIC,
                 .BindFlags = D3D11_BIND_SHADER_RESOURCE,
                 .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
                 .MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED,
-                .StructureByteStride = sizeof(Transform),
+                .StructureByteStride = sizeof(SampleAffine),
             };
 
             const D3D11_SUBRESOURCE_DATA data{
