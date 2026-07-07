@@ -7,8 +7,9 @@ Texture2D input_texture : register(t0);
 StructuredBuffer<Transform> transform_buffer : register(t1);
 SamplerState linear_sampler : register(s0);
 cbuffer params : register(b0) {
-    column_major float3x3 kTransform;
-    float4 kPivot;
+    float3 kTransformRow0;
+    float3 kTransformRow1;
+    float2 kPivot;
     float2 kOrigin;
     float2 kTexel;
     float kAmount;
@@ -26,7 +27,10 @@ float4 main(float4 pos : SV_Position) : SV_Target {
     float4 wet = Sample(pos.xy);
     const float4 dry = wet * kMix.x;
 
-    pos.xy = mul(kTransform, float3(pos.xy - kPivot.xy, 1.0)).xy;
+    {
+        const float3 p = float3(pos.xy - kPivot, 1.0);
+        pos.xy = float2(dot(kTransformRow0, p), dot(kTransformRow1, p));
+    }
 
     for (int i = 1; i < kSamples; ++i) {
         const Transform xform = transform_buffer[i - 1];

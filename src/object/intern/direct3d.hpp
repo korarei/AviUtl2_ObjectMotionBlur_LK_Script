@@ -21,13 +21,15 @@ class Renderer {
     };
 
     struct alignas(16) Param {
-        float transform[3][4] = {{0.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}};
-        float pivot[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float row0[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+        float row1[4] = {0.0f, 1.0f, 0.0f, 0.0f};
+        float pivot[2] = {0.0f, 0.0f};
         float origin[2] = {0.0f, 0.0f};
         float texel[2] = {0.0f, 0.0f};
         float amount = 0.0f;
         int32_t samples = 1;
         float mix[2] = {0.0f, 0.0f};
+        float padding[2] = {0.0f, 0.0f};
     };
 
     class Context {
@@ -37,16 +39,17 @@ class Renderer {
         Context(Context&&) = delete;
         Context& operator=(Context&&) = delete;
 
-        [[nodiscard]] Result Draw(ID3D11Texture2D* dst, float w, float h, ID3D11Texture2D* src,
-                                  const std::vector<SampleAffine>& xforms, const Param& param) const;
+        [[nodiscard]] Result Draw(ID3D11Texture2D* src, const std::vector<SampleAffine>& xforms,
+                                  const Param& param) const;
 
       private:
         friend class Renderer;
 
-        explicit Context(Renderer& owner) : owner_(owner) {}
+        Context(Renderer& owner, ID3D11Texture2D* dst) : owner_(owner), dst_(dst) {}
         ~Context() = default;
 
         Renderer& owner_;
+        ID3D11Texture2D* dst_;
     };
 
     Renderer(const Renderer&) = delete;
@@ -58,14 +61,14 @@ class Renderer {
     ~Renderer() = default;
 
     template <class F>
-    Result Render(ID3D11Texture2D* tex, F&& f) {
+    Result Render(ID3D11Texture2D* dst, F&& f) {
         static_assert(std::is_same_v<std::invoke_result_t<F, Context&>, Result>);
 
-        if (const auto result = Acquire(tex); !result.has_value()) {
+        if (const auto result = Acquire(dst); !result.has_value()) {
             return result;
         }
 
-        Context ctx(*this);
+        Context ctx(*this, dst);
         return std::forward<F>(f)(ctx);
     }
 

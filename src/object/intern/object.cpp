@@ -501,33 +501,24 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         const float mix = std::clamp(static_cast<float>(properties::compositing::mix.value) * 0.02f, 0.0f, 2.0f);
 
         const d3d::Renderer::Param param{
-            .transform =
+            .row0 =
                 {
-                    {
-                        object->transform(0, 0),
-                        object->transform(1, 0),
-                        object->transform(2, 0),
-                        0.0f,
-                    },
-                    {
-                        object->transform(0, 1),
-                        object->transform(1, 1),
-                        object->transform(2, 1),
-                        0.0f,
-                    },
-                    {
-                        object->transform(0, 2),
-                        object->transform(1, 2),
-                        object->transform(2, 2),
-                        0.0f,
-                    },
+                    object->transform(0, 0),
+                    object->transform(0, 1),
+                    object->transform(0, 2),
+                    0.0f,
+                },
+            .row1 =
+                {
+                    object->transform(1, 0),
+                    object->transform(1, 1),
+                    object->transform(1, 2),
+                    0.0f,
                 },
             .pivot =
                 {
                     object->state.current.pivot.x(),
                     object->state.current.pivot.y(),
-                    object->state.previous.pivot.x(),
-                    object->state.previous.pivot.y(),
                 },
             .origin =
                 {
@@ -548,9 +539,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                 },
         };
 
-        const auto result = renderer.Render(src, [&xforms, &param, &size, dst, src](d3d::Renderer::Context& ctx) {
-            return ctx.Draw(dst, size.x(), size.y(), src, xforms, param);
-        });
+        const auto result = renderer.Render(
+            dst, [&xforms, &param, src](d3d::Renderer::Context& ctx) { return ctx.Draw(src, xforms, param); });
 
         if (!result.has_value()) {
             aul::Logger::Error(result.error());

@@ -4,8 +4,8 @@
 #include <fullscreen.h>
 
 namespace blur::object::direct3d {
-Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* dst, float w, float h, ID3D11Texture2D* src,
-                                         const std::vector<SampleAffine>& xforms, const Param& param) const {
+Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* src, const std::vector<SampleAffine>& xforms,
+                                         const Param& param) const {
     static constexpr ID3D11ShaderResourceView* null_srvs[2] = {nullptr, nullptr};
     constexpr ID3D11RenderTargetView* null_rtv = nullptr;
 
@@ -30,7 +30,7 @@ Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* dst, float w, float h,
 
     ComPtr<ID3D11RenderTargetView> rtv;
 
-    if (FAILED(owner_.device_->CreateRenderTargetView(dst, nullptr, &rtv))) {
+    if (FAILED(owner_.device_->CreateRenderTargetView(dst_, nullptr, &rtv))) {
         return std::unexpected(L"Failed to create render target view");
     }
 
@@ -89,7 +89,10 @@ Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* dst, float w, float h,
         owner_.ctx_->PSSetShaderResources(0u, 2u, inputs);
     }
 
-    D3D11_VIEWPORT vp{0.0f, 0.0f, w, h, 0.0f, 1.0f};
+    D3D11_TEXTURE2D_DESC desc{};
+    dst_->GetDesc(&desc);
+
+    D3D11_VIEWPORT vp{0.0f, 0.0f, static_cast<float>(desc.Width), static_cast<float>(desc.Height), 0.0f, 1.0f};
 
     owner_.ctx_->IASetInputLayout(nullptr);
     owner_.ctx_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
