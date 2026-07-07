@@ -91,6 +91,55 @@ cache::Store store{};
     return deg * f;
 }
 
+[[nodiscard]] std::vector<EFFECT_HANDLE> GetEmptyHandles(int frame, const FILTER_PROC_VIDEO* ctx) {
+    std::vector<EFFECT_HANDLE> candidates{};
+    candidates.reserve(ctx->object->layer);
+
+    {
+        int layer = ctx->object->layer - 1;
+
+        for (int i = ctx->object->layer - 1; i >= 0; --i) {
+            if (!ctx->edit->get_layer_enable(i)) {
+                continue;
+            }
+
+            auto* const object_handle = ctx->edit->find_object(i, frame);
+
+            if (object_handle == nullptr || ctx->edit->get_object_layer_frame(object_handle).start > frame) {
+                continue;
+            }
+
+            auto* const candidate = ctx->edit->find_effect(object_handle, L"グループ制御");
+
+            if (candidate == nullptr || !ctx->edit->get_effect_enable(candidate)) {
+                continue;
+            }
+
+            const auto* const alias = ctx->edit->get_object_alias(object_handle);
+
+            if (alias == nullptr) {
+                continue;
+            }
+
+            if (candidate == nullptr || !ctx->edit->get_effect_enable(candidate)) {
+                continue;
+            }
+
+            const auto* const range_str = ctx->edit->get_effect_item_value(candidate, L"対象レイヤー数");
+
+            int range;
+            if (range_str == nullptr || !string::ToNumber(range_str, range) || (range != 0 && range < layer - i)) {
+                continue;
+            }
+
+            candidates.push_back(candidate);
+            layer = i;
+        }
+    }
+
+    return candidates;
+}
+
 [[nodiscard]] std::vector<Object::Transform> GetEmpties(int offset, const FILTER_PROC_VIDEO* ctx) {
     if (ctx->object->layer == 0) {
         return {};

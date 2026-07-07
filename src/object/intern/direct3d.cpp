@@ -92,7 +92,7 @@ Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* src, const std::vector
     D3D11_TEXTURE2D_DESC desc{};
     dst_->GetDesc(&desc);
 
-    D3D11_VIEWPORT vp{0.0f, 0.0f, static_cast<float>(desc.Width), static_cast<float>(desc.Height), 0.0f, 1.0f};
+    const D3D11_VIEWPORT vp{0.0f, 0.0f, static_cast<float>(desc.Width), static_cast<float>(desc.Height), 0.0f, 1.0f};
 
     owner_.ctx_->IASetInputLayout(nullptr);
     owner_.ctx_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

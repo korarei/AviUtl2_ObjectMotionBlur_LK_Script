@@ -7,84 +7,89 @@
 #endif
 
 #include <charconv>
+#include <optional>
 #include <string>
 #include <string_view>
 
 namespace blur::string {
-inline std::wstring ToWstring(std::u8string_view string) {
+[[nodiscard]] inline std::wstring ToWString(std::u8string_view input) {
 #ifdef _WIN32
-    if (string.empty()) {
+    if (input.empty()) {
         return {};
     }
 
-    const char* str = reinterpret_cast<const char*>(string.data());
-    const int size = static_cast<int>(string.size());
+    const char* input_data = reinterpret_cast<const char*>(input.data());
+    const int input_size = static_cast<int>(input.size());
 
-    const int wsize = MultiByteToWideChar(CP_UTF8, 0, str, size, nullptr, 0);
+    const int output_size = MultiByteToWideChar(CP_UTF8, 0, input_data, input_size, nullptr, 0);
 
-    if (wsize == 0) {
+    if (output_size == 0) {
         return {};
     }
 
-    std::wstring wstr(wsize, 0);
-    MultiByteToWideChar(CP_UTF8, 0, str, size, wstr.data(), wsize);
+    std::wstring output(output_size, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, input_data, input_size, output.data(), output_size);
 
-    return wstr;
+    return output;
 #else
-    return std::filesystem::path(string).wstring();
+    return std::filesystem::path(input).wstring();
 #endif
 }
 
-inline std::u8string ToUtf8(std::wstring_view string) {
+[[nodiscard]] inline std::u8string ToUTF8(std::wstring_view input) {
 #ifdef _WIN32
-    if (string.empty()) {
+    if (input.empty()) {
         return {};
     }
 
-    const wchar_t* wstr = string.data();
-    const int wsize = static_cast<int>(string.size());
+    const wchar_t* input_data = input.data();
+    const int input_size = static_cast<int>(input.size());
 
-    const int size = WideCharToMultiByte(CP_UTF8, 0, wstr, wsize, nullptr, 0, nullptr, nullptr);
+    const int output_size = WideCharToMultiByte(CP_UTF8, 0, input_data, input_size, nullptr, 0, nullptr, nullptr);
 
-    if (size == 0) {
+    if (output_size == 0) {
         return {};
     }
 
-    std::u8string utf8(size, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wstr, wsize, reinterpret_cast<char*>(utf8.data()), size, nullptr, nullptr);
+    std::u8string output(output_size, u8'\0');
 
-    return utf8;
+    char* output_data = reinterpret_cast<char*>(output.data());
+
+    WideCharToMultiByte(CP_UTF8, 0, input_data, input_size, output_data, output_size, nullptr, nullptr);
+
+    return output;
 #else
-    return std::filesystem::path(string).u8string();
+    return std::filesystem::path(input).u8string();
 #endif
 }
 
-inline std::string AsString(std::u8string_view string) {
-    return {reinterpret_cast<const char*>(string.data()), string.size()};
+[[nodiscard]] inline std::string AsString(std::u8string_view input) {
+    return {reinterpret_cast<const char*>(input.data()), input.size()};
 }
 
-inline std::u8string AsUtf8(std::string_view string) {
-    return {reinterpret_cast<const char8_t*>(string.data()), string.size()};
+[[nodiscard]] inline std::u8string AsUTF8(std::string_view input) {
+    return {reinterpret_cast<const char8_t*>(input.data()), input.size()};
 }
 
-[[nodiscard]] inline bool ToNumber(std::string_view s, float& v) noexcept {
-    const char* first = s.data();
-    const char* last = first + s.size();
-    const auto [ptr, ec] = std::from_chars(first, last, v);
-    return ptr == last && ec == std::errc{};
+template <std::floating_point T>
+[[nodiscard]] inline std::optional<T> ToNumber(std::string_view input) noexcept {
+    const char* first = input.data();
+    const char* last = first + input.size();
+
+    T output{};
+    const auto [ptr, ec] = std::from_chars(first, last, output);
+
+    return ptr == last && ec == std::errc{} ? std::optional{output} : std::nullopt;
 }
 
-[[nodiscard]] inline bool ToNumber(std::string_view s, double& v) noexcept {
-    const char* first = s.data();
-    const char* last = first + s.size();
-    const auto [ptr, ec] = std::from_chars(first, last, v);
-    return ptr == last && ec == std::errc{};
-}
+template <std::integral T>
+[[nodiscard]] inline std::optional<T> ToNumber(std::string_view input, int base = 10) noexcept {
+    const char* first = input.data();
+    const char* last = first + input.size();
 
-[[nodiscard]] inline bool ToNumber(std::string_view s, int& v, int base = 10) noexcept {
-    const char* first = s.data();
-    const char* last = first + s.size();
-    const auto [ptr, ec] = std::from_chars(first, last, v, base);
-    return ptr == last && ec == std::errc{};
+    T output{};
+    const auto [ptr, ec] = std::from_chars(first, last, output, base);
+
+    return ptr == last && ec == std::errc{} ? std::optional{output} : std::nullopt;
 }
 }  // namespace blur::string
