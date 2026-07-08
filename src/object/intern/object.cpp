@@ -439,6 +439,7 @@ cache::Store store{};
     samples -= 1;
 
     const auto& state = object.state;
+
     const float step = 1.0f / static_cast<float>(samples);
     std::vector<d3d::Renderer::SampleTransform> xforms(samples);
 
@@ -459,7 +460,7 @@ cache::Store store{};
 
         prev_to_world = Eigen::Translation2f(lerp(state.current.pivot, state.previous.pivot, t)) * prev_to_world;
 
-        xforms[static_cast<size_t>(i - 1)] = {
+        xforms[i - 1] = {
             .row0 = {prev_to_world(0, 0), prev_to_world(0, 1), prev_to_world(0, 2)},
             .row1 = {prev_to_world(1, 0), prev_to_world(1, 1), prev_to_world(1, 2)},
         };
