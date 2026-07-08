@@ -18,6 +18,7 @@ Diagnostics:
       - misc-unused-using-decls
 
     Remove:
+      - readability-function-cognitive-complexity
       - readability-uppercase-literal-suffix
       - readability-magic-numbers
       - readability-isolate-declaration

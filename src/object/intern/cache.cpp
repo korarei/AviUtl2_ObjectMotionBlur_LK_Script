@@ -1,5 +1,9 @@
 #include "cache.hpp"
 
+namespace {
+constexpr float kEpsilon = Eigen::NumTraits<float>::dummy_precision();
+}
+
 namespace blur::object::cache {
 const Store::Transform& Store::Get(const OBJECT_INFO* ctx, int pos) {
     if (ctx->index < 0 || ctx->index >= ctx->num) {
@@ -60,9 +64,9 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
         curr = {
             .transform =
                 {
-                    .pivot = Eigen::Vector2f(ctx->param->cx, ctx->param->cy),
-                    .position = Eigen::Vector2f(ctx->param->x, ctx->param->y),
-                    .scale = Eigen::Vector2f(ctx->param->sx, ctx->param->sy),
+                    .pivot = Eigen::Map<const Eigen::Vector2f>(&ctx->param->cx),
+                    .position = Eigen::Map<const Eigen::Vector2f>(&ctx->param->x),
+                    .scale = Eigen::Map<const Eigen::Vector2f>(&ctx->param->sx),
                     .rotation = ctx->param->rz,
                 },
             .frame = ctx->object->frame,
@@ -87,7 +91,7 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
 
         prev.pivot = (prev.pivot - curr.pivot) * scale + curr.pivot;
         prev.position = (prev.position - curr.position) * scale + curr.position;
-        prev.scale = ((prev.scale - curr.scale) * scale + curr.scale).cwiseMax(0.0f);
+        prev.scale = ((prev.scale - curr.scale) * scale + curr.scale).cwiseMax(kEpsilon);
         prev.rotation = ((prev.rotation - curr.rotation) * scale) + curr.rotation;
     }
 }

@@ -50,7 +50,18 @@ Logger& Logger::Instance() {
 
 void Context::Init(EDIT_HANDLE* context) { Instance().context_ = context; }
 
-const EDIT_HANDLE* Context::handle() { return Instance().context_; }
+Context::SessionState Context::CurrentSessionState() {
+    switch (Instance().context_->get_edit_state()) {
+        case EDIT_HANDLE::EDIT_STATE_EDIT:
+            return SessionState::kEditing;
+        case EDIT_HANDLE::EDIT_STATE_PLAY:
+            return SessionState::kPlaying;
+        case EDIT_HANDLE::EDIT_STATE_SAVE:
+            return SessionState::kRendering;
+        default:
+            return SessionState::kEditing;
+    }
+}
 
 Context& Context::Instance() {
     static Context inst;

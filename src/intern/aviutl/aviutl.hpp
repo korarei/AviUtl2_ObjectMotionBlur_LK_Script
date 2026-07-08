@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <cstdint>
 #include <string>
 
 #include <logger2.h>
@@ -34,6 +35,12 @@ class Logger {
 
 class Context {
   public:
+    enum class SessionState : uint8_t {
+        kEditing,
+        kPlaying,
+        kRendering,
+    };
+
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
     Context(Context&&) = delete;
@@ -41,7 +48,7 @@ class Context {
 
     static void Init(EDIT_HANDLE* context);
 
-    [[nodiscard]] static const EDIT_HANDLE* handle();
+    [[nodiscard]] static SessionState CurrentSessionState();
 
   private:
     constexpr Context() = default;

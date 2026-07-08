@@ -1,14 +1,14 @@
-struct Transform {
-    float4 row0;
-    float4 row1;
+struct SampleTransform {
+    float3 row0;
+    float3 row1;
 };
 
-Texture2D input_texture : register(t0);
-StructuredBuffer<Transform> transform_buffer : register(t1);
+Texture2D source_texture : register(t0);
+StructuredBuffer<SampleTransform> sample_transform_buffer : register(t1);
 SamplerState linear_sampler : register(s0);
 cbuffer params : register(b0) {
-    float3 kTransformRow0;
-    float3 kTransformRow1;
+    float3 kBaseTransformRow0;
+    float3 kBaseTransformRow1;
     float2 kPivot;
     float2 kOrigin;
     float2 kTexel;
@@ -18,25 +18,21 @@ cbuffer params : register(b0) {
 }
 
 inline float4 Sample(float2 pos) {
-    return input_texture.Sample(linear_sampler, (pos + 0.5) * kTexel);
+    return source_texture.Sample(linear_sampler, (pos + 0.5) * kTexel);
 }
 
 float4 main(float4 pos : SV_Position) : SV_Target {
-    pos.xy += kOrigin.xy;
+    pos.xyz = float3(pos.xy + kOrigin, 1.0);
 
     float4 wet = Sample(pos.xy);
     const float4 dry = wet * kMix.x;
 
-    {
-        const float3 p = float3(pos.xy - kPivot, 1.0);
-        pos.xy = float2(dot(kTransformRow0, p), dot(kTransformRow1, p));
-    }
+    pos.xy -= kPivot;
+    pos.xy = float2(dot(kBaseTransformRow0, pos.xyz), dot(kBaseTransformRow1, pos.xyz));
 
     for (int i = 1; i < kSamples; ++i) {
-        const Transform xform = transform_buffer[i - 1];
-        const float3 p = float3(pos.xy, 1.0);
-
-        wet += Sample(float2(dot(xform.row0.xyz, p), dot(xform.row1.xyz, p)));
+        const SampleTransform xform = sample_transform_buffer[i - 1];
+        wet += Sample(float2(dot(xform.row0, pos.xyz), dot(xform.row1, pos.xyz)));
     }
 
     wet *= rcp(float(kSamples)) * kMix.y;

@@ -25,8 +25,6 @@ namespace string = blur::string;
 namespace cache = blur::object::cache;
 namespace d3d = blur::object::direct3d;
 
-using Offset = cache::Store::Transform;
-
 constexpr float kEpsilon = Eigen::NumTraits<float>::dummy_precision();
 
 struct Object {
@@ -37,18 +35,19 @@ struct Object {
     };
 
     struct Snapshot {
+        Eigen::Affine2f world_transform = Eigen::Affine2f::Identity();
         Eigen::Vector2f pivot = Eigen::Vector2f::Zero();
         std::vector<Transform> transforms;
     };
 
-    Eigen::Affine2f transform = Eigen::Affine2f::Identity();
-    Eigen::Vector2f size = Eigen::Vector2f::Zero();
-
-    struct {
+    struct State {
         Snapshot previous{};
         Snapshot current{};
-        size_t size = 0u;
-    } state{};
+        size_t depth = 0u;
+    };
+
+    Eigen::Vector2f dimensions = Eigen::Vector2f::Zero();
+    State state{};
 };
 
 struct Box {
@@ -91,17 +90,24 @@ cache::Store store{};
     return deg * f;
 }
 
+[[nodiscard]] inline Eigen::Vector2f lerp(const Eigen::Vector2f& a, const Eigen::Vector2f& b, float t) {
+    return a + (b - a) * t;
+}
+
 [[nodiscard]] std::vector<EFFECT_HANDLE> GetEmptyHandles(int frame, const FILTER_PROC_VIDEO* ctx) {
-    std::vector<EFFECT_HANDLE> candidates{};
-    candidates.reserve(ctx->object->layer);
+    std::vector<EFFECT_HANDLE> handles{};
+    handles.reserve(ctx->object->layer);
 
     {
         int layer = ctx->object->layer - 1;
 
-        for (int i = ctx->object->layer - 1; i >= 0; --i) {
+        for (int i = layer; i >= 0; --i) {
+            /*
+            v2.0.54 では非対応
             if (!ctx->edit->get_layer_enable(i)) {
                 continue;
             }
+            */
 
             auto* const object_handle = ctx->edit->find_object(i, frame);
 
@@ -115,29 +121,55 @@ cache::Store store{};
                 continue;
             }
 
-            const auto* const alias = ctx->edit->get_object_alias(object_handle);
+            {
+                const auto* const alias = ctx->edit->get_object_alias(object_handle);
 
-            if (alias == nullptr) {
-                continue;
+                if (alias == nullptr) {
+                    continue;
+                }
+
+                const std::string_view object{alias};
+
+                const auto meta_st = object.find("[Object]");
+                const auto empty_st = object.find("[Object.0]");
+
+                if (meta_st == std::string_view::npos || empty_st == std::string_view::npos) {
+                    continue;
+                }
+
+                {
+                    const auto meta = object.substr(meta_st, empty_st - meta_st);
+
+                    if (auto st = meta.find("\ngroup.control="); st != std::string_view::npos) {
+                        st += sizeof("\ngroup.control=") - 1uz;
+
+                        if (meta.substr(st, meta.find_first_of("\r\n", st) - st) == "0") {
+                            break;
+                        }
+                    }
+                }
+
+                const auto empty = object.substr(empty_st, object.find("[Object.1]") - empty_st);
+
+                if (auto st = empty.find("\n対象レイヤー数="); st != std::string_view::npos) {
+                    st += sizeof("\n対象レイヤー数=") - 1uz;
+
+                    const auto range = string::ToNumber<int>(empty.substr(st, empty.find_first_of("\r\n", st) - st));
+
+                    if (!range.has_value() || (*range != 0 && *range < layer - i)) {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
             }
 
-            if (candidate == nullptr || !ctx->edit->get_effect_enable(candidate)) {
-                continue;
-            }
-
-            const auto* const range_str = ctx->edit->get_effect_item_value(candidate, L"対象レイヤー数");
-
-            int range;
-            if (range_str == nullptr || !string::ToNumber(range_str, range) || (range != 0 && range < layer - i)) {
-                continue;
-            }
-
-            candidates.push_back(candidate);
+            handles.push_back(candidate);
             layer = i;
         }
     }
 
-    return candidates;
+    return handles;
 }
 
 [[nodiscard]] std::vector<Object::Transform> GetEmpties(int offset, const FILTER_PROC_VIDEO* ctx) {
@@ -151,44 +183,15 @@ cache::Store store{};
         return {};
     }
 
-    std::vector<EFFECT_HANDLE> candidates{};
-    candidates.reserve(ctx->object->layer);
+    const auto handles = GetEmptyHandles(frame, ctx);
 
-    {
-        int layer = ctx->object->layer - 1;
-
-        for (int i = ctx->object->layer - 1; i >= 0; --i) {
-            auto* const handle = ctx->edit->find_object(i, frame);
-
-            if (handle == nullptr || ctx->edit->get_object_layer_frame(handle).start > frame) {
-                continue;
-            }
-
-            auto* const candidate = ctx->edit->find_effect(handle, L"グループ制御");
-
-            if (candidate == nullptr || !ctx->edit->get_effect_enable(candidate)) {
-                continue;
-            }
-
-            const auto* const range_str = ctx->edit->get_effect_item_value(candidate, L"対象レイヤー数");
-
-            int range;
-            if (range_str == nullptr || !string::ToNumber(range_str, range) || (range != 0 && range < layer - i)) {
-                continue;
-            }
-
-            candidates.push_back(candidate);
-            layer = i;
-        }
-    }
-
-    std::vector<Object::Transform> empties(candidates.size());
+    std::vector<Object::Transform> empties(handles.size());
 
     {
         const double point = static_cast<double>(frame);
 
-        for (size_t i = 0; i < candidates.size(); ++i) {
-            auto* const handle = candidates[candidates.size() - 1uz - i];
+        for (size_t i = 0; i < handles.size(); ++i) {
+            auto* const handle = handles[handles.size() - 1uz - i];
 
             Object::Transform transform{};
 
@@ -205,10 +208,9 @@ cache::Store store{};
             if (ctx->edit->get_effect_track_value(handle, L"拡大率", point, &v)) {
                 if (v < 0.0) {
                     aul::Logger::Warning(L"Negative scaling is not supported");
-                    transform.scale = Eigen::Vector2f::Constant(0.0f);
-                } else {
-                    transform.scale = Eigen::Vector2f::Constant(static_cast<float>(v) * 0.01f);
                 }
+
+                transform.scale = Eigen::Vector2f::Constant(std::max(static_cast<float>(v) * 0.01f, kEpsilon));
             }
 
             if (ctx->edit->get_effect_track_value(handle, L"Z軸回転", point, &v)) {
@@ -222,7 +224,7 @@ cache::Store store{};
     return empties;
 }
 
-[[nodiscard]] Object::Snapshot GetObjectSnapshot(int offset, const FILTER_PROC_VIDEO* ctx) {
+[[nodiscard]] Object::Snapshot GetObjectTransforms(int offset, const FILTER_PROC_VIDEO* ctx) {
     Object::Snapshot snapshot{};
 
     snapshot.transforms = GetEmpties(offset, ctx);
@@ -246,10 +248,9 @@ cache::Store store{};
 
                 if ((scale.array() < 0.0f).any()) {
                     aul::Logger::Warning(L"Negative scaling is not supported");
-                    transform.scale = scale.cwiseMax(0.0f);
-                } else {
-                    transform.scale = std::move(scale);
                 }
+
+                transform.scale = scale.cwiseMax(kEpsilon);
             }
         }
     }
@@ -258,15 +259,15 @@ cache::Store store{};
 }
 
 // 0フレーム以外呼び出し禁止
-[[nodiscard]] std::optional<Object::Snapshot> Extrapolate(const Object::Snapshot& zero, const FILTER_PROC_VIDEO* ctx) {
+[[nodiscard]] Object::Snapshot Extrapolate(const Object::Snapshot& zero, const FILTER_PROC_VIDEO* ctx) {
     switch (properties::extrapolation::value) {
         case 1: {
-            const auto one = GetObjectSnapshot(1, ctx);
+            const auto one = GetObjectTransforms(1, ctx);
 
             const auto extrapolate = [](const Object::Transform& t0, const Object::Transform& t1) {
                 return Object::Transform{
                     .position = t0.position * 2.0f - t1.position,
-                    .scale = (t0.scale * 2.0f - t1.scale).cwiseMax(0.0f),
+                    .scale = (t0.scale * 2.0f - t1.scale).cwiseMax(kEpsilon),
                     .rotation = (t0.rotation * 2.0f) - t1.rotation,
                 };
             };
@@ -288,14 +289,14 @@ cache::Store store{};
             };
         }
         case 2: {
-            const auto one = GetObjectSnapshot(1, ctx);
-            const auto two = GetObjectSnapshot(2, ctx);
+            const auto one = GetObjectTransforms(1, ctx);
+            const auto two = GetObjectTransforms(2, ctx);
 
             const auto extrapolate = [](const Object::Transform& t0, const Object::Transform& t1,
                                         const Object::Transform& t2) {
                 return Object::Transform{
                     .position = t0.position * 3.0f - t1.position * 3.0f + t2.position,
-                    .scale = (t0.scale * 3.0f - t1.scale * 3.0f + t2.scale).cwiseMax(0.0f),
+                    .scale = (t0.scale * 3.0f - t1.scale * 3.0f + t2.scale).cwiseMax(kEpsilon),
                     .rotation = (t0.rotation * 3.0f) - (t1.rotation * 3.0f) + t2.rotation,
                 };
             };
@@ -320,153 +321,148 @@ cache::Store store{};
             };
         }
         default:
-            return std::nullopt;
+            return zero;
     }
 }
 
-[[nodiscard]] std::optional<Object> CreateObject(const FILTER_PROC_VIDEO* ctx) {
+[[nodiscard]] Object ResolveObject(float amount, const FILTER_PROC_VIDEO* ctx) {
     Object object;
+    auto& state = object.state;
 
     store.Set(ctx);
 
-    object.state.current = GetObjectSnapshot(0, ctx);
+    state.current = GetObjectTransforms(0, ctx);
 
     if (ctx->object->frame == 0) {
-        if (const auto prev = Extrapolate(object.state.current, ctx); prev.has_value()) {
-            object.state.previous = *prev;
-        } else {
-            return std::nullopt;
-        }
+        state.previous = Extrapolate(state.current, ctx);
     } else {
-        object.state.previous = GetObjectSnapshot(-1, ctx);
+        state.previous = GetObjectTransforms(-1, ctx);
     }
 
-    for (const auto& xform : object.state.current.transforms) {
-        object.transform = object.transform * Eigen::Translation2f(xform.position) *
-                           Eigen::Rotation2Df(xform.rotation) * Eigen::Scaling(xform.scale);
-    }
-
-    if (object.transform.linear().determinant() < kEpsilon) {
-        aul::Logger::Warning(L"Singular transformation (determinant is zero)");
-        return std::nullopt;
-    }
-
-    object.size = Eigen::Vector2f(static_cast<float>(ctx->object->width), static_cast<float>(ctx->object->height));
+    object.dimensions = Eigen::Vector2i(ctx->object->width, ctx->object->height).cast<float>();
 
     {
-        const Eigen::Vector2f center = object.size * 0.5f;
+        const Eigen::Vector2f center = object.dimensions * 0.5f;
 
-        object.state.current.pivot += center;
-        object.state.previous.pivot += center;
+        state.current.pivot += center;
+        state.previous.pivot += center;
     }
 
-    if (object.state.current.transforms.size() == object.state.previous.transforms.size()) {
-        object.state.size = object.state.current.transforms.size();
-        return object;
-    }
-
-    {
-        const auto n = std::ssize(object.state.current.transforms) - std::ssize(object.state.previous.transforms);
+    if (state.current.transforms.size() == state.previous.transforms.size()) {
+        state.depth = state.current.transforms.size();
+    } else {
+        const auto n = std::ssize(state.current.transforms) - std::ssize(state.previous.transforms);
 
         if (n > 0ll) {
-            object.state.previous.transforms.insert(object.state.previous.transforms.begin(), n, Object::Transform{});
+            state.previous.transforms.insert(state.previous.transforms.begin(), n, Object::Transform{});
         } else {
-            object.state.current.transforms.insert(object.state.current.transforms.begin(), -n, Object::Transform{});
+            state.current.transforms.insert(state.current.transforms.begin(), -n, Object::Transform{});
         }
 
-        object.state.size = object.state.current.transforms.size();
+        state.depth = state.current.transforms.size();
+    }
+
+    state.previous.pivot = lerp(state.current.pivot, state.previous.pivot, amount);
+
+    for (size_t i = 0uz; i < state.depth; ++i) {
+        const auto& curr = state.current.transforms[i];
+        auto& prev = state.previous.transforms[i];
+
+        prev.position = lerp(curr.position, prev.position, amount);
+        prev.scale = lerp(curr.scale.cwiseInverse(), prev.scale.cwiseInverse(), amount).cwiseInverse();
+        prev.rotation = std::lerp(curr.rotation, prev.rotation, amount);
+
+        state.current.world_transform = state.current.world_transform * Eigen::Translation2f(curr.position) *
+                                        Eigen::Rotation2Df(curr.rotation) * Eigen::Scaling(curr.scale);
+
+        state.previous.world_transform = state.previous.world_transform * Eigen::Translation2f(prev.position) *
+                                         Eigen::Rotation2Df(prev.rotation) * Eigen::Scaling(prev.scale);
     }
 
     return object;
 }
 
-[[nodiscard]] std::optional<Box> ComputeBox(const Object& object, float amount, int samples = 3) {
-    constexpr float inf = Eigen::NumTraits<float>::infinity();
+[[nodiscard]] int ComputeSamples(const Object& object) {
+    const auto& state = object.state;
 
-    auto lerp = [](const Eigen::Vector2f& a, const Eigen::Vector2f& b, float t) { return a + (b - a) * t; };
+    const auto curr_to_prev = state.previous.world_transform.inverse() * state.current.world_transform;
+    float max = 0.0f;
 
-    Box box{
-        .min = Eigen::AlignedBox2f(Eigen::Vector2f::Constant(-inf), Eigen::Vector2f::Constant(inf)),
-        .max = Eigen::AlignedBox2f(Eigen::Vector2f::Zero(), object.size),
-    };
+    for (int i = 0; i < 4; ++i) {
+        const Eigen::Vector2f corner((i & 1) != 0 ? object.dimensions.x() : 0.0f,
+                                     (i & 2) != 0 ? object.dimensions.y() : 0.0f);
+        const Eigen::Vector2f prev = curr_to_prev * (corner - state.current.pivot) + state.previous.pivot;
 
-    const float step = amount / static_cast<float>(samples);
-    const auto curr_to_world = object.transform.inverse();
+        max = std::max(max, (prev - corner).norm());
+    }
+
+    return static_cast<int>(max + 1.0f);
+}
+
+[[nodiscard]] Eigen::AlignedBox2f ComputeBox(const Object& object, int samples) {
+    const auto& state = object.state;
+
+    const float step = 1.0f / static_cast<float>(samples);
+    const auto curr_to_world = state.current.world_transform.inverse();
+
+    Eigen::AlignedBox2f box(Eigen::Vector2f::Zero(), object.dimensions);
 
     for (int i = 0; i < samples; ++i) {
-        const auto t = amount - (step * static_cast<float>(i));
+        const auto t = 1.0f - (step * static_cast<float>(i));
 
         Eigen::Affine2f curr_to_prev = curr_to_world;
 
-        for (size_t j = 0; j < object.state.size; ++j) {
-            const auto& curr = object.state.current.transforms[j];
-            const auto& prev = object.state.previous.transforms[j];
+        for (size_t j = 0; j < state.depth; ++j) {
+            const auto& curr = state.current.transforms[j];
+            const auto& prev = state.previous.transforms[j];
 
-            if ((curr.scale.array() < kEpsilon).any() || (prev.scale.array() < kEpsilon).any()) {
-                aul::Logger::Warning(L"Singular transformation (determinant is zero)");
-                return std::nullopt;
-            }
+            const auto translation = Eigen::Translation2f(lerp(curr.position, prev.position, t));
+            const Eigen::Vector2f scale = lerp(curr.scale.cwiseInverse(), prev.scale.cwiseInverse(), t).cwiseInverse();
+            const auto rotation = Eigen::Rotation2Df(std::lerp(curr.rotation, prev.rotation, t));
 
-            curr_to_prev = curr_to_prev * Eigen::Translation2f(lerp(curr.position, prev.position, t)) *
-                           Eigen::Rotation2Df(std::lerp(curr.rotation, prev.rotation, t)) *
-                           Eigen::Scaling(lerp(curr.scale.cwiseInverse(), prev.scale.cwiseInverse(), t).cwiseInverse());
+            curr_to_prev = curr_to_prev * translation * rotation * Eigen::Scaling(scale);
         }
 
         const Eigen::Vector2f pivot = lerp(object.state.current.pivot, object.state.previous.pivot, t);
 
         const Eigen::Vector2f origin = curr_to_prev * -pivot + object.state.current.pivot;
         const auto linear = curr_to_prev.linear();
-        const Eigen::Vector2f pos = origin + linear.cwiseMin(0.0f) * object.size;
-        const Eigen::Vector2f end = origin + linear.cwiseMax(0.0f) * object.size;
 
-        box.min.min() = box.min.min().cwiseMax(pos);
-        box.min.max() = box.min.max().cwiseMin(end);
-
-        box.max.extend(pos);
-        box.max.extend(end);
+        box.extend(origin + linear.cwiseMin(0.0f) * object.dimensions);
+        box.extend(origin + linear.cwiseMax(0.0f) * object.dimensions);
     }
-
-    // box.min が inf ではないはず
 
     return box;
 }
 
-[[nodiscard]] std::vector<d3d::Renderer::SampleAffine> CreateSampleAffines(const Object& object, float amount,
-                                                                           int samples) {
-    auto lerp = [](const Eigen::Vector2f& a, const Eigen::Vector2f& b, float t) { return a + (b - a) * t; };
+[[nodiscard]] std::vector<d3d::Renderer::SampleTransform> CreateSampleTransforms(const Object& object, int samples) {
+    samples -= 1;
 
-    const float step = amount / static_cast<float>(samples - 1);
-    std::vector<d3d::Renderer::SampleAffine> xforms(samples - 1);
+    const auto& state = object.state;
+    const float step = 1.0f / static_cast<float>(samples);
+    std::vector<d3d::Renderer::SampleTransform> xforms(samples);
 
-    for (int i = 1; i < samples; ++i) {
+    for (int i = 1; i <= samples; ++i) {
         const float t = step * static_cast<float>(i);
-        Eigen::Affine2f transform = Eigen::Affine2f::Identity();
+        Eigen::Affine2f prev_to_world = Eigen::Affine2f::Identity();
 
-        for (size_t j = 0uz; j < object.state.size; ++j) {
-            const auto& curr = object.state.current.transforms[j];
-            const auto& prev = object.state.previous.transforms[j];
+        for (size_t j = 0uz; j < state.depth; ++j) {
+            const auto& curr = state.current.transforms[j];
+            const auto& prev = state.previous.transforms[j];
 
-            const Eigen::Vector2f position = lerp(curr.position, prev.position, t);
-            const Eigen::Vector2f scale = lerp(curr.scale.cwiseInverse(), prev.scale.cwiseInverse(), t);
-            const float angle = std::lerp(curr.rotation, prev.rotation, t);
-            const Eigen::Matrix2f linear = scale.asDiagonal() * Eigen::Rotation2Df(-angle).toRotationMatrix();
+            const auto translation = Eigen::Translation2f(-lerp(curr.position, prev.position, t));
+            const auto scale = lerp(curr.scale.cwiseInverse(), prev.scale.cwiseInverse(), t);
+            const auto rotation = Eigen::Rotation2Df(-std::lerp(curr.rotation, prev.rotation, t));
 
-            Eigen::Affine2f xform = Eigen::Affine2f::Identity();
-            xform.linear() = linear;
-            xform.translation() = linear * -position;
-
-            transform = xform * transform;
+            prev_to_world = Eigen::Scaling(scale) * rotation * translation * prev_to_world;
         }
 
-        transform = Eigen::Translation2f(lerp(object.state.current.pivot, object.state.previous.pivot, t)) * transform;
+        prev_to_world = Eigen::Translation2f(lerp(state.current.pivot, state.previous.pivot, t)) * prev_to_world;
 
-        auto& xform = xforms[static_cast<size_t>(i - 1)];
-        xform.row0[0] = transform(0, 0);
-        xform.row0[1] = transform(0, 1);
-        xform.row0[2] = transform(0, 2);
-        xform.row1[0] = transform(1, 0);
-        xform.row1[1] = transform(1, 1);
-        xform.row1[2] = transform(1, 2);
+        xforms[static_cast<size_t>(i - 1)] = {
+            .row0 = {prev_to_world(0, 0), prev_to_world(0, 1), prev_to_world(0, 2)},
+            .row1 = {prev_to_world(1, 0), prev_to_world(1, 1), prev_to_world(1, 2)},
+        };
     }
 
     return xforms;
@@ -481,31 +477,19 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 
     const auto amount = std::clamp(static_cast<float>(props::shutter_angle.value) / 360.0f, 0.0f, 1.0f);
 
-    if (amount < kEpsilon) {
+    if (amount < kEpsilon || (ctx->object->frame == 0 && props::extrapolation::value == 0)) {
         return true;
     }
 
-    const auto object = CreateObject(ctx);
+    const auto object = ResolveObject(amount, ctx);
 
-    if (!object.has_value()) {
-        return true;
-    }
-
-    const auto box = ComputeBox(*object, amount);
-
-    if (!box.has_value()) {
-        return true;
-    }
-
-    Eigen::Vector2f size = box->max.sizes();
-
-    const int required_samples = static_cast<int>((size - box->min.sizes().cwiseMax(0.0f)).norm() + 1.0f);
+    const int required_samples = ComputeSamples(object);
 
     if (required_samples < 2) {
         return true;
     }
 
-    const int limit = aul::Context::handle()->get_edit_state() == EDIT_HANDLE::EDIT_STATE_SAVE
+    const int limit = aul::Context::CurrentSessionState() == aul::Context::SessionState::kRendering
                           ? static_cast<int>(props::sampling::render::sample_limit.value)
                           : static_cast<int>(props::sampling::viewport::sample_limit.value);
 
@@ -515,14 +499,19 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         return true;
     }
 
+    const auto box = ComputeBox(object, std::max(samples / 64, 2));
+
     {
-        Eigen::Vector2f origin = Eigen::Vector2f::Zero();
+        Eigen::Vector2f origin;
+        Eigen::Vector2f size;
 
         if (props::should_resize.value) {
-            origin = box->max.min();
-            Eigen::Map<Eigen::Vector2f>(&ctx->param->cx) -= box->max.min() + (size - object->size) * 0.5f;
+            origin = box.min();
+            size = box.sizes().array().ceil();
+            Eigen::Map<Eigen::Vector2f>(&ctx->param->cx) -= origin + (size - object.dimensions) * 0.5f;
         } else {
-            size = object->size;
+            origin = Eigen::Vector2f::Zero();
+            size = object.dimensions;
         }
 
         if (!ctx->copy_image_resource(L"resource:src", nullptr)) {
@@ -545,29 +534,27 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             return false;
         }
 
-        const auto xforms = CreateSampleAffines(*object, amount, samples);
+        const auto xforms = CreateSampleTransforms(object, samples);
 
         const float mix = std::clamp(static_cast<float>(properties::compositing::mix.value) * 0.02f, 0.0f, 2.0f);
 
         const d3d::Renderer::Param param{
-            .row0 =
+            .base_transform_row0 =
                 {
-                    object->transform(0, 0),
-                    object->transform(0, 1),
-                    object->transform(0, 2),
-                    0.0f,
+                    object.state.current.world_transform(0, 0),
+                    object.state.current.world_transform(0, 1),
+                    object.state.current.world_transform(0, 2),
                 },
-            .row1 =
+            .base_transform_row1 =
                 {
-                    object->transform(1, 0),
-                    object->transform(1, 1),
-                    object->transform(1, 2),
-                    0.0f,
+                    object.state.current.world_transform(1, 0),
+                    object.state.current.world_transform(1, 1),
+                    object.state.current.world_transform(1, 2),
                 },
             .pivot =
                 {
-                    object->state.current.pivot.x(),
-                    object->state.current.pivot.y(),
+                    object.state.current.pivot.x(),
+                    object.state.current.pivot.y(),
                 },
             .origin =
                 {
@@ -576,8 +563,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                 },
             .texel =
                 {
-                    1.0f / object->size.x(),
-                    1.0f / object->size.y(),
+                    1.0f / object.dimensions.x(),
+                    1.0f / object.dimensions.y(),
                 },
             .amount = amount,
             .samples = samples,

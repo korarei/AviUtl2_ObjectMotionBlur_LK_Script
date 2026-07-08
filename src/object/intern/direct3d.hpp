@@ -13,16 +13,16 @@
 namespace blur::object::direct3d {
 class Renderer {
   public:
-    using Result = std::expected<void, std::wstring>;
-
-    struct alignas(16) SampleAffine {
-        float row0[4] = {1.0f, 0.0f, 0.0f, 0.0f};
-        float row1[4] = {0.0f, 1.0f, 0.0f, 0.0f};
+    struct SampleTransform {
+        float row0[3] = {1.0f, 0.0f, 0.0f};
+        float row1[3] = {0.0f, 1.0f, 0.0f};
     };
 
     struct alignas(16) Param {
-        float row0[4] = {1.0f, 0.0f, 0.0f, 0.0f};
-        float row1[4] = {0.0f, 1.0f, 0.0f, 0.0f};
+        float base_transform_row0[3] = {1.0f, 0.0f, 0.0f};
+        float padding0 = 0.0f;
+        float base_transform_row1[3] = {0.0f, 1.0f, 0.0f};
+        float padding1 = 0.0f;
         float pivot[2] = {0.0f, 0.0f};
         float origin[2] = {0.0f, 0.0f};
         float texel[2] = {0.0f, 0.0f};
@@ -32,6 +32,8 @@ class Renderer {
         float padding[2] = {0.0f, 0.0f};
     };
 
+    using Result = std::expected<void, std::wstring>;
+
     class Context {
       public:
         Context(const Context&) = delete;
@@ -39,7 +41,7 @@ class Renderer {
         Context(Context&&) = delete;
         Context& operator=(Context&&) = delete;
 
-        [[nodiscard]] Result Draw(ID3D11Texture2D* src, const std::vector<SampleAffine>& xforms,
+        [[nodiscard]] Result Draw(ID3D11Texture2D* src, const std::vector<SampleTransform>& xforms,
                                   const Param& param) const;
 
       private:
