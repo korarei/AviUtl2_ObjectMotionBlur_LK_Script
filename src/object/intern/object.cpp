@@ -474,13 +474,13 @@ cache::Store store{};
     return box;
 }
 
-[[nodiscard]] std::vector<d3d::Renderer::SampleTransform> CreateSampleTransforms(const Object& object, int samples) {
+void CreateSampleTransforms(const Object& object, int samples, std::vector<d3d::Renderer::SampleTransform>& xforms) {
     samples -= 1;
 
     const auto& state = object.state;
 
     const float step = 1.0f / static_cast<float>(samples);
-    std::vector<d3d::Renderer::SampleTransform> xforms(samples);
+    xforms.resize(samples);
 
     for (int i = 1; i <= samples; ++i) {
         const float t = step * static_cast<float>(i);
@@ -504,8 +504,6 @@ cache::Store store{};
             .row1 = {prev_to_world(1, 0), prev_to_world(1, 1), prev_to_world(1, 2)},
         };
     }
-
-    return xforms;
 }
 
 bool Apply(FILTER_PROC_VIDEO* ctx) {
@@ -574,7 +572,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             return false;
         }
 
-        const auto xforms = CreateSampleTransforms(object, samples);
+        thread_local std::vector<d3d::Renderer::SampleTransform> xforms;
+        CreateSampleTransforms(object, samples, xforms);
 
         const float mix = std::clamp(static_cast<float>(properties::compositing::mix.value) * 0.02f, 0.0f, 2.0f);
 
@@ -615,8 +614,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                 },
         };
 
-        const auto result = renderer.Render(
-            dst, [&xforms, &param, src](d3d::Renderer::Context& ctx) { return ctx.Draw(src, xforms, param); });
+        const auto result =
+            renderer.Render(dst, [&param, src](d3d::Renderer::Context& ctx) { return ctx.Draw(src, xforms, param); });
 
         if (!result.has_value()) {
             aul::Logger::Error(result.error());
