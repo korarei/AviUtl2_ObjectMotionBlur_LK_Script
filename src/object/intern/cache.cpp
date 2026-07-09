@@ -14,11 +14,11 @@ const Store::Transform& Store::Get(const OBJECT_INFO* ctx, int pos) {
     auto& objects = cache_[ctx->effect_id];
 
     if (objects == nullptr) {
-        objects = std::make_shared<std::vector<std::array<Entry, 4uz>>>();
+        objects = std::make_shared<std::vector<std::array<Entry, 6uz>>>();
     }
 
     if (objects->size() != static_cast<size_t>(ctx->num)) {
-        objects->assign(ctx->num, std::array<Entry, 4uz>{});
+        objects->assign(ctx->num, std::array<Entry, 6uz>{});
     }
 
     const auto& entries = (*objects)[ctx->index];
@@ -27,11 +27,11 @@ const Store::Transform& Store::Get(const OBJECT_INFO* ctx, int pos) {
         pos = 0;
     }
 
-    if (const auto& entry = entries[pos + 1]; entry.frame.has_value()) {
+    if (const auto& entry = entries[static_cast<size_t>(pos) + 1uz]; entry.frame.has_value()) {
         return entry.transform;
     }
 
-    return entries[1].transform;
+    return entries[1uz].transform;
 }
 
 void Store::Set(const FILTER_PROC_VIDEO* ctx) {
@@ -42,11 +42,11 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
     auto& objects = cache_[ctx->object->effect_id];
 
     if (objects == nullptr) {
-        objects = std::make_shared<std::vector<std::array<Entry, 4uz>>>();
+        objects = std::make_shared<std::vector<std::array<Entry, 6uz>>>();
     }
 
     if (objects->size() != static_cast<size_t>(ctx->object->num)) {
-        objects->assign(ctx->object->num, std::array<Entry, 4uz>{});
+        objects->assign(ctx->object->num, std::array<Entry, 6uz>{});
     }
 
     auto& entries = (*objects)[ctx->object->index];
@@ -54,8 +54,8 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
     int d = 0;
 
     {
-        auto& prev = entries[0];
-        auto& curr = entries[1];
+        auto& prev = entries[0uz];
+        auto& curr = entries[1uz];
 
         if (!curr.frame.has_value() || *curr.frame != ctx->object->frame) {
             prev = curr;
@@ -72,10 +72,8 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
             .frame = ctx->object->frame,
         };
 
-        if (ctx->object->frame == 1) {
-            entries[2] = curr;
-        } else if (ctx->object->frame == 2) {
-            entries[3] = curr;
+        if (ctx->object->frame > 0 && ctx->object->frame < 5) {
+            entries[static_cast<size_t>(ctx->object->frame) + 1uz] = curr;
         }
 
         if (prev.frame.has_value()) {
@@ -86,8 +84,8 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
     if (d != 0 && d != 1) {
         const float scale = 1.0f / static_cast<float>(d);
 
-        const auto& curr = entries[1].transform;
-        auto& prev = entries[0].transform;
+        const auto& curr = entries[1uz].transform;
+        auto& prev = entries[0uz].transform;
 
         prev.pivot = (prev.pivot - curr.pivot) * scale + curr.pivot;
         prev.position = (prev.position - curr.position) * scale + curr.position;
@@ -97,6 +95,6 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
 }
 
 void Store::Reset() {
-    std::unordered_map<int64_t, std::shared_ptr<std::vector<std::array<Entry, 4uz>>>>{}.swap(cache_);
+    std::unordered_map<int64_t, std::shared_ptr<std::vector<std::array<Entry, 6uz>>>>{}.swap(cache_);
 }
 }  // namespace blur::object::cache

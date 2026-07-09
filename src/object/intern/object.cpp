@@ -1,11 +1,13 @@
 #include "../object.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>  // IWYU pragma: keep
 #include <format>
 #include <numbers>
 #include <vector>
 
+#include <Eigen/Dense>
 #include <Eigen/Geometry>
 
 #pragma warning(push)
@@ -258,71 +260,108 @@ cache::Store store{};
     return snapshot;
 }
 
+[[nodiscard]] float ExtrapolateScalar(const std::vector<float>& values, int degree) {
+    const int rows = static_cast<int>(values.size());
+    const int cols = degree + 1;
+
+    Eigen::MatrixXf a(rows, cols);
+    Eigen::VectorXf b(rows);
+
+    for (int row = 0; row < rows; ++row) {
+        const float t = static_cast<float>(row);
+        const float w = std::sqrt(std::exp(-t));
+        float x = 1.0f;
+
+        for (int col = 0; col < cols; ++col) {
+            a(row, col) = x * w;
+            x *= t;
+        }
+
+        b(row) = values[static_cast<size_t>(row)] * w;
+    }
+
+    const Eigen::VectorXf fs = a.colPivHouseholderQr().solve(b);
+
+    float result = 0.0f;
+    float x = 1.0f;
+
+    for (int col = 0; col < cols; ++col) {
+        result += fs(col) * x;
+        x *= -1.0f;
+    }
+
+    return result;
+}
+
+[[nodiscard]] Eigen::Vector2f ExtrapolateVector(const std::vector<Eigen::Vector2f>& values, int degree) {
+    std::vector<float> xs(values.size());
+    std::vector<float> ys(values.size());
+
+    for (size_t i = 0; i < values.size(); ++i) {
+        xs[i] = values[i].x();
+        ys[i] = values[i].y();
+    }
+
+    return {ExtrapolateScalar(xs, degree), ExtrapolateScalar(ys, degree)};
+}
+
 // 0フレーム以外呼び出し禁止
 [[nodiscard]] Object::Snapshot Extrapolate(const Object::Snapshot& zero, const FILTER_PROC_VIDEO* ctx) {
-    switch (properties::extrapolation::value) {
-        case 1: {
-            const auto one = GetObjectTransforms(1, ctx);
+    const int degree = properties::extrapolation::value;
 
-            const auto extrapolate = [](const Object::Transform& t0, const Object::Transform& t1) {
-                return Object::Transform{
-                    .position = t0.position * 2.0f - t1.position,
-                    .scale = (t0.scale * 2.0f - t1.scale).cwiseMax(kEpsilon),
-                    .rotation = (t0.rotation * 2.0f) - t1.rotation,
-                };
-            };
-
-            std::vector<Object::Transform> prev(std::max(zero.transforms.size(), one.transforms.size()));
-
-            auto z = zero.transforms.rbegin();
-            auto o = one.transforms.rbegin();
-
-            for (auto it = prev.rbegin(); it != prev.rend(); ++it) {
-                const auto& t0 = (z != zero.transforms.rend()) ? *z++ : Object::Transform{};
-                const auto& t1 = (o != one.transforms.rend()) ? *o++ : Object::Transform{};
-                *it = extrapolate(t0, t1);
-            }
-
-            return Object::Snapshot{
-                .pivot = zero.pivot * 2.0f - one.pivot,
-                .transforms = std::move(prev),
-            };
-        }
-        case 2: {
-            const auto one = GetObjectTransforms(1, ctx);
-            const auto two = GetObjectTransforms(2, ctx);
-
-            const auto extrapolate = [](const Object::Transform& t0, const Object::Transform& t1,
-                                        const Object::Transform& t2) {
-                return Object::Transform{
-                    .position = t0.position * 3.0f - t1.position * 3.0f + t2.position,
-                    .scale = (t0.scale * 3.0f - t1.scale * 3.0f + t2.scale).cwiseMax(kEpsilon),
-                    .rotation = (t0.rotation * 3.0f) - (t1.rotation * 3.0f) + t2.rotation,
-                };
-            };
-
-            std::vector<Object::Transform> prev(
-                std::max({zero.transforms.size(), one.transforms.size(), two.transforms.size()}));
-
-            auto z = zero.transforms.rbegin();
-            auto o = one.transforms.rbegin();
-            auto t = two.transforms.rbegin();
-
-            for (auto it = prev.rbegin(); it != prev.rend(); ++it) {
-                const auto& t0 = (z != zero.transforms.rend()) ? *z++ : Object::Transform{};
-                const auto& t1 = (o != one.transforms.rend()) ? *o++ : Object::Transform{};
-                const auto& t2 = (t != two.transforms.rend()) ? *t++ : Object::Transform{};
-                *it = extrapolate(t0, t1, t2);
-            }
-
-            return Object::Snapshot{
-                .pivot = zero.pivot * 3.0f - one.pivot * 3.0f + two.pivot,
-                .transforms = std::move(prev),
-            };
-        }
-        default:
-            return zero;
+    if (degree < 1 || degree > 2) {
+        return zero;
     }
+
+    const size_t samples = static_cast<size_t>(degree) + 3uz;
+    std::vector<Object::Snapshot> snapshots;
+    snapshots.reserve(samples);
+    snapshots.push_back(zero);
+
+    for (size_t i = 1; i < samples; ++i) {
+        snapshots.push_back(GetObjectTransforms(static_cast<int>(i), ctx));
+    }
+
+    size_t depth = 0uz;
+
+    for (const auto& snapshot : snapshots) {
+        depth = std::max(depth, snapshot.transforms.size());
+    }
+
+    std::vector<Eigen::Vector2f> pivots(samples);
+
+    for (size_t i = 0; i < samples; ++i) {
+        pivots[i] = snapshots[i].pivot;
+    }
+
+    std::vector<Object::Transform> transforms(depth);
+
+    for (size_t i = 0; i < depth; ++i) {
+        std::vector<Eigen::Vector2f> positions(samples);
+        std::vector<Eigen::Vector2f> scales(samples);
+        std::vector<float> rotations(samples);
+
+        for (size_t j = 0; j < samples; ++j) {
+            const size_t offset = depth - snapshots[j].transforms.size();
+            const Object::Transform identity{};
+            const auto& transform = (i < offset) ? identity : snapshots[j].transforms[i - offset];
+
+            positions[j] = transform.position;
+            scales[j] = transform.scale.cwiseMax(kEpsilon).array().log();
+            rotations[j] = transform.rotation;
+        }
+
+        transforms[i] = {
+            .position = ExtrapolateVector(positions, degree),
+            .scale = ExtrapolateVector(scales, degree).array().exp().cwiseMax(kEpsilon),
+            .rotation = ExtrapolateScalar(rotations, degree),
+        };
+    }
+
+    return Object::Snapshot{
+        .pivot = ExtrapolateVector(pivots, degree),
+        .transforms = std::move(transforms),
+    };
 }
 
 [[nodiscard]] Object ResolveObject(float amount, const FILTER_PROC_VIDEO* ctx) {

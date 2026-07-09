@@ -45,6 +45,6 @@ class Store {
     void Reset();
 
   private:
-    std::unordered_map<int64_t, std::shared_ptr<std::vector<std::array<Entry, 4uz>>>> cache_;
+    std::unordered_map<int64_t, std::shared_ptr<std::vector<std::array<Entry, 6uz>>>> cache_;
 };
 }  // namespace blur::object::cache
