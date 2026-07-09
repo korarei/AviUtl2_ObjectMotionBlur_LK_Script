@@ -37,7 +37,7 @@ Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* src, const std::vector
     owner_.ctx_->OMSetRenderTargets(1u, rtv.GetAddressOf(), nullptr);
 
     {
-        if (xforms.size() == owner_.xforms_.size) {
+        if (xforms.size() <= owner_.xforms_.capacity) {
             D3D11_MAPPED_SUBRESOURCE mapped{};
 
             if (FAILED(owner_.ctx_->Map(owner_.xforms_.buffer.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped))) {
@@ -76,7 +76,7 @@ Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* src, const std::vector
 
             owner_.xforms_.buffer = std::move(buf);
             owner_.xforms_.srv = std::move(srv);
-            owner_.xforms_.size = xforms.size();
+            owner_.xforms_.capacity = xforms.size();
         }
 
         ComPtr<ID3D11ShaderResourceView> srv;
@@ -177,7 +177,7 @@ Renderer::Result Renderer::Acquire(ID3D11Texture2D* tex) {
 void Renderer::Reset() {
     xforms_.buffer.Reset();
     xforms_.srv.Reset();
-    xforms_.size = 0uz;
+    xforms_.capacity = 0uz;
 
     cb_.Reset();
     smp_.Reset();

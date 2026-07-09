@@ -93,7 +93,7 @@ class Renderer {
     struct {
         ComPtr<ID3D11Buffer> buffer = nullptr;
         ComPtr<ID3D11ShaderResourceView> srv = nullptr;
-        size_t size = 0uz;
+        size_t capacity = 0uz;
     } xforms_{};
 };
 }  // namespace blur::object::direct3d
