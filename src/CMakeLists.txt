@@ -72,6 +72,8 @@ add_compile_definitions(
     EIGEN_MPL2_ONLY
     VERSION=L"${PROJECT_VERSION}"
     REQUIRES_AVIUTL2=${REQUIRES_AVIUTL2}u
+
+    $<$<CONFIG:Release>:NDEBUG>
 )
 
 add_subdirectory(intern/aviutl)
