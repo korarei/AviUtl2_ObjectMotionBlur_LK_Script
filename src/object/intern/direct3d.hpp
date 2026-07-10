@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <mutex>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -66,6 +67,8 @@ class Renderer {
     Result Render(ID3D11Texture2D* dst, F&& f) {
         static_assert(std::is_same_v<std::invoke_result_t<F, Context&>, Result>);
 
+        const std::lock_guard lock(mutex_);
+
         if (const auto result = Acquire(dst); !result.has_value()) {
             return result;
         }
@@ -81,6 +84,9 @@ class Renderer {
     using ComPtr = Microsoft::WRL::ComPtr<T>;
 
     [[nodiscard]] Result Acquire(ID3D11Texture2D* tex);
+    void Release();
+
+    std::mutex mutex_;
 
     ComPtr<ID3D11Device> device_ = nullptr;
     ComPtr<ID3D11DeviceContext> ctx_ = nullptr;

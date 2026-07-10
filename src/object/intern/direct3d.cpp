@@ -119,19 +119,19 @@ Renderer::Result Renderer::Acquire(ID3D11Texture2D* tex) {
             return {};
         }
 
-        Reset();
+        Release();
 
         device_ = std::move(device);
         device_->GetImmediateContext(&ctx_);
     }
 
     if (FAILED(device_->CreateVertexShader(g_fullscreen, sizeof(g_fullscreen), nullptr, &vs_))) {
-        Reset();
+        Release();
         return std::unexpected(L"Failed to create vertex shader");
     }
 
     if (FAILED(device_->CreatePixelShader(g_blur, sizeof(g_blur), nullptr, &ps_))) {
-        Reset();
+        Release();
         return std::unexpected(L"Failed to create pixel shader");
     }
 
@@ -150,7 +150,7 @@ Renderer::Result Renderer::Acquire(ID3D11Texture2D* tex) {
         };
 
         if (FAILED(device_->CreateSamplerState(&desc, &smp_))) {
-            Reset();
+            Release();
             return std::unexpected(L"Failed to create sampler state");
         }
     }
@@ -166,7 +166,7 @@ Renderer::Result Renderer::Acquire(ID3D11Texture2D* tex) {
         };
 
         if (FAILED(device_->CreateBuffer(&desc, nullptr, &cb_))) {
-            Reset();
+            Release();
             return std::unexpected(L"Failed to create constant buffer");
         }
     }
@@ -175,6 +175,11 @@ Renderer::Result Renderer::Acquire(ID3D11Texture2D* tex) {
 }
 
 void Renderer::Reset() {
+    const std::lock_guard lock(mutex_);
+    Release();
+}
+
+void Renderer::Release() {
     xforms_.buffer.Reset();
     xforms_.srv.Reset();
     xforms_.capacity = 0uz;

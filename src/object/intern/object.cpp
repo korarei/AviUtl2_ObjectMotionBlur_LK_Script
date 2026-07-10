@@ -572,8 +572,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             return false;
         }
 
-        thread_local std::vector<d3d::Renderer::SampleTransform> xforms;
-        CreateSampleTransforms(object, samples, xforms);
+        thread_local std::vector<d3d::Renderer::SampleTransform> sample_xforms;
+        CreateSampleTransforms(object, samples, sample_xforms);
 
         const float mix = std::clamp(static_cast<float>(properties::compositing::mix.value) * 0.02f, 0.0f, 2.0f);
 
@@ -614,8 +614,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                 },
         };
 
-        const auto result =
-            renderer.Render(dst, [&param, src](d3d::Renderer::Context& ctx) { return ctx.Draw(src, xforms, param); });
+        const auto result = renderer.Render(
+            dst, [&param, src](d3d::Renderer::Context& ctx) { return ctx.Draw(src, sample_xforms, param); });
 
         if (!result.has_value()) {
             aul::Logger::Error(result.error());
@@ -667,7 +667,10 @@ namespace blur::object {
 void Init(HOST_APP_TABLE* host) {
     host->register_filter_plugin(&info);
 
-    host->register_clear_cache_handler([]([[maybe_unused]] EDIT_SECTION* edit) { store.Reset(); });
+    host->register_clear_cache_handler([]([[maybe_unused]] EDIT_SECTION* edit) {
+        renderer.Reset();
+        store.Reset();
+    });
 }
 
 void Deinit() {
