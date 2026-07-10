@@ -21,7 +21,7 @@ Store::Transform Store::Get(const OBJECT_INFO* ctx, int pos) {
 
     const auto& entries = objects[ctx->index];
 
-    if (pos < -1 || pos > 2) {
+    if (pos < -1 || pos > static_cast<int>(entries.size() - 2uz)) {
         pos = 0;
     }
 
@@ -65,7 +65,7 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
         .frame = ctx->object->frame,
     };
 
-    if (ctx->object->frame > 0 && ctx->object->frame < 5) {
+    if (ctx->object->frame > 0 && ctx->object->frame < static_cast<int>(entries.size() - 1uz)) {
         entries[static_cast<size_t>(ctx->object->frame) + 1uz] = curr;
     }
 
