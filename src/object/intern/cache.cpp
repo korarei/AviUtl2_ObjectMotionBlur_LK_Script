@@ -15,15 +15,11 @@ Store::Transform Store::Get(const OBJECT_INFO* ctx, int pos) {
 
     auto& objects = cache_[ctx->effect_id];
 
-    if (objects == nullptr) {
-        objects = std::make_shared<std::vector<std::array<Entry, 6uz>>>();
+    if (objects.size() != static_cast<size_t>(ctx->num)) {
+        objects.assign(ctx->num, std::array<Entry, 6uz>{});
     }
 
-    if (objects->size() != static_cast<size_t>(ctx->num)) {
-        objects->assign(ctx->num, std::array<Entry, 6uz>{});
-    }
-
-    const auto& entries = (*objects)[ctx->index];
+    const auto& entries = objects[ctx->index];
 
     if (pos < -1 || pos > 2) {
         pos = 0;
@@ -45,15 +41,11 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
 
     auto& objects = cache_[ctx->object->effect_id];
 
-    if (objects == nullptr) {
-        objects = std::make_shared<std::vector<std::array<Entry, 6uz>>>();
+    if (objects.size() != static_cast<size_t>(ctx->object->num)) {
+        objects.assign(ctx->object->num, std::array<Entry, 6uz>{});
     }
 
-    if (objects->size() != static_cast<size_t>(ctx->object->num)) {
-        objects->assign(ctx->object->num, std::array<Entry, 6uz>{});
-    }
-
-    auto& entries = (*objects)[ctx->object->index];
+    auto& entries = objects[ctx->object->index];
 
     int d = 0;
 
@@ -101,6 +93,6 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
 void Store::Reset() {
     const std::lock_guard lock(mutex_);
 
-    std::unordered_map<int64_t, std::shared_ptr<std::vector<std::array<Entry, 6uz>>>>{}.swap(cache_);
+    std::unordered_map<int64_t, std::vector<std::array<Entry, 6uz>>>{}.swap(cache_);
 }
 }  // namespace blur::object::cache

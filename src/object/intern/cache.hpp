@@ -4,7 +4,6 @@
 
 #include <array>
 #include <cstdint>
-#include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -47,6 +46,6 @@ class Store {
 
   private:
     std::mutex mutex_;
-    std::unordered_map<int64_t, std::shared_ptr<std::vector<std::array<Entry, 6uz>>>> cache_;
+    std::unordered_map<int64_t, std::vector<std::array<Entry, 6uz>>> cache_;
 };
 }  // namespace blur::object::cache
