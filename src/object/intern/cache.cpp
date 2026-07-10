@@ -1,8 +1,12 @@
 #include "cache.hpp"
 
+#include <intern/aviutl/aviutl.hpp>
+
 namespace {
+namespace aul = blur::aviutl;
+
 constexpr float kEpsilon = Eigen::NumTraits<float>::dummy_precision();
-}
+}  // namespace
 
 namespace blur::object::cache {
 Store::Transform Store::Get(const OBJECT_INFO* ctx, int pos) {
@@ -16,7 +20,7 @@ Store::Transform Store::Get(const OBJECT_INFO* ctx, int pos) {
     auto& objects = cache_[ctx->effect_id];
 
     if (objects.size() != static_cast<size_t>(ctx->num)) {
-        objects.assign(ctx->num, std::array<Entry, 6uz>{});
+        objects.resize(ctx->num);
     }
 
     const auto& entries = objects[ctx->index];
@@ -32,6 +36,34 @@ Store::Transform Store::Get(const OBJECT_INFO* ctx, int pos) {
     return entries[1uz].transform;
 }
 
+bool Store::Get(const OBJECT_INFO* ctx, std::array<Transform, 4uz>& xforms) {
+    if (ctx->index < 0 || ctx->index >= ctx->num) {
+        return false;
+    }
+
+    const std::lock_guard lock(mutex_);
+
+    auto& objects = cache_[ctx->effect_id];
+
+    if (objects.size() != static_cast<size_t>(ctx->num)) {
+        objects.resize(ctx->num);
+    }
+
+    const auto& entries = objects[ctx->index];
+
+    for (size_t i = 2uz; i < entries.size(); ++i) {
+        if (!entries[i].frame.has_value()) {
+            return false;
+        }
+    }
+
+    for (size_t i = 0uz; i < xforms.size(); ++i) {
+        xforms[i] = entries[i + 2uz].transform;
+    }
+
+    return true;
+}
+
 void Store::Set(const FILTER_PROC_VIDEO* ctx) {
     if (ctx->object->index < 0 || ctx->object->index >= ctx->object->num) {
         return;
@@ -42,7 +74,7 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
     auto& objects = cache_[ctx->object->effect_id];
 
     if (objects.size() != static_cast<size_t>(ctx->object->num)) {
-        objects.assign(ctx->object->num, std::array<Entry, 6uz>{});
+        objects.resize(ctx->object->num);
     }
 
     auto& entries = objects[ctx->object->index];
@@ -79,6 +111,32 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
             prev.transform.position = lerp(curr.transform.position, prev.transform.position);
             prev.transform.scale = lerp(curr.transform.scale, prev.transform.scale).cwiseMax(kEpsilon);
             prev.transform.rotation = std::lerp(curr.transform.rotation, prev.transform.rotation, t);
+
+            if (d < 0) {
+                aul::Logger::Warning(L"Reverse playback is not supported");
+            }
+        }
+    }
+}
+
+void Store::Set(const OBJECT_INFO* ctx, const std::array<Transform, 4uz>& xforms) {
+    if (ctx->index < 0 || ctx->index >= ctx->num) {
+        return;
+    }
+
+    const std::lock_guard lock(mutex_);
+
+    auto& objects = cache_[ctx->effect_id];
+
+    if (objects.size() != static_cast<size_t>(ctx->num)) {
+        objects.resize(ctx->num);
+    }
+
+    auto& entries = objects[ctx->index];
+
+    for (size_t i = 2uz; i < entries.size(); ++i) {
+        if (!entries[i].frame.has_value()) {
+            entries[i] = {.transform = xforms[i - 2uz], .frame = static_cast<int>(i) - 1};
         }
     }
 }

@@ -81,6 +81,27 @@ FILTER_ITEM_TRACK mix(L"Compositing::Mix", 100.0, 0.0, 100.0, 0.01);
 }  // namespace compositing
 FILTER_ITEM_GROUP additional_options(L"Additional Options", false);
 FILTER_ITEM_CHECK should_print_diagnostics(L"Diagnostics", false);
+namespace intern {
+struct Record {
+    std::array<cache::Store::Transform, 4uz> transforms{};
+    bool is_valid = false;
+};
+
+static_assert(sizeof(std::array<Record, 8uz>) <= 1024);
+
+FILTER_ITEM_DATA<std::array<Record, 8uz>> records0(L"Internal::Records[0]");
+FILTER_ITEM_DATA<std::array<Record, 8uz>> records1(L"Internal::Records[1]");
+FILTER_ITEM_DATA<std::array<Record, 8uz>> records2(L"Internal::Records[2]");
+FILTER_ITEM_DATA<std::array<Record, 8uz>> records3(L"Internal::Records[3]");
+FILTER_ITEM_DATA<std::array<Record, 8uz>> records4(L"Internal::Records[4]");
+FILTER_ITEM_DATA<std::array<Record, 8uz>> records5(L"Internal::Records[5]");
+FILTER_ITEM_DATA<std::array<Record, 8uz>> records6(L"Internal::Records[6]");
+FILTER_ITEM_DATA<std::array<Record, 8uz>> records7(L"Internal::Records[7]");
+
+std::array<FILTER_ITEM_DATA<std::array<Record, 8uz>>*, 8uz> records = {
+    &records0, &records1, &records2, &records3, &records4, &records5, &records6, &records7,
+};
+}  // namespace intern
 }  // namespace properties
 
 d3d::Renderer renderer{};
@@ -306,13 +327,27 @@ cache::Store store{};
 
 // 0フレーム以外呼び出し禁止
 [[nodiscard]] Object::Snapshot Extrapolate(const Object::Snapshot& zero, const FILTER_PROC_VIDEO* ctx) {
-    const int degree = properties::extrapolation::value;
+    namespace props = properties;
 
-    if (degree < 1 || degree > 2) {
+    if (props::extrapolation::value < 1 || props::extrapolation::value > 2) {
         return zero;
     }
 
-    const size_t samples = static_cast<size_t>(degree) + 3uz;
+    if (ctx->object->index >= 0 && ctx->object->index < ctx->object->num && ctx->object->index < 64) {
+        const auto r = std::div(ctx->object->index, 8);
+
+        auto& record = (*props::intern::records[r.quot]->value)[r.rem];
+
+        if (record.is_valid) {
+            store.Set(ctx->object, record.transforms);
+        }
+
+        record.is_valid = store.Get(ctx->object, record.transforms);
+    } else {
+        aul::Logger::Warning(L"Object index exceeds the cache limit");
+    }
+
+    const size_t samples = static_cast<size_t>(props::extrapolation::value) + 3uz;
     std::vector<Object::Snapshot> snapshots;
     snapshots.reserve(samples);
     snapshots.push_back(zero);
@@ -351,14 +386,14 @@ cache::Store store{};
         }
 
         transforms[i] = {
-            .position = ExtrapolateVector(positions, degree),
-            .scale = ExtrapolateVector(scales, degree).array().exp().cwiseMax(kEpsilon),
-            .rotation = ExtrapolateScalar(rotations, degree),
+            .position = ExtrapolateVector(positions, props::extrapolation::value),
+            .scale = ExtrapolateVector(scales, props::extrapolation::value).array().exp().cwiseMax(kEpsilon),
+            .rotation = ExtrapolateScalar(rotations, props::extrapolation::value),
         };
     }
 
     return Object::Snapshot{
-        .pivot = ExtrapolateVector(pivots, degree),
+        .pivot = ExtrapolateVector(pivots, props::extrapolation::value),
         .transforms = std::move(transforms),
     };
 }
@@ -648,6 +683,14 @@ constinit void* props[] = {
     &properties::compositing::mix,
     &properties::additional_options,
     &properties::should_print_diagnostics,
+    &properties::intern::records0,
+    &properties::intern::records1,
+    &properties::intern::records2,
+    &properties::intern::records3,
+    &properties::intern::records4,
+    &properties::intern::records5,
+    &properties::intern::records6,
+    &properties::intern::records7,
     nullptr,
 };
 
