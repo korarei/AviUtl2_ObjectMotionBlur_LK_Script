@@ -20,7 +20,7 @@ Store::Transform Store::Get(const OBJECT_INFO* ctx, int pos) {
     auto& objects = cache_[ctx->effect_id];
 
     if (objects.size() != static_cast<size_t>(ctx->num)) {
-        objects.resize(ctx->num);
+        objects.assign(ctx->num, std::array<Entry, 6uz>{});
     }
 
     const auto& entries = objects[ctx->index];
@@ -46,7 +46,7 @@ bool Store::Get(const OBJECT_INFO* ctx, std::array<Transform, 4uz>& xforms) {
     auto& objects = cache_[ctx->effect_id];
 
     if (objects.size() != static_cast<size_t>(ctx->num)) {
-        objects.resize(ctx->num);
+        objects.assign(ctx->num, std::array<Entry, 6uz>{});
     }
 
     const auto& entries = objects[ctx->index];
@@ -74,7 +74,7 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
     auto& objects = cache_[ctx->object->effect_id];
 
     if (objects.size() != static_cast<size_t>(ctx->object->num)) {
-        objects.resize(ctx->object->num);
+        objects.assign(ctx->object->num, std::array<Entry, 6uz>{});
     }
 
     auto& entries = objects[ctx->object->index];
@@ -129,7 +129,7 @@ void Store::Set(const OBJECT_INFO* ctx, const std::array<Transform, 4uz>& xforms
     auto& objects = cache_[ctx->effect_id];
 
     if (objects.size() != static_cast<size_t>(ctx->num)) {
-        objects.resize(ctx->num);
+        objects.assign(ctx->num, std::array<Entry, 6uz>{});
     }
 
     auto& entries = objects[ctx->index];

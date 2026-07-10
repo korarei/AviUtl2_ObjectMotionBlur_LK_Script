@@ -84,7 +84,7 @@ FILTER_ITEM_CHECK should_print_diagnostics(L"Diagnostics", false);
 namespace intern {
 struct Record {
     std::array<cache::Store::Transform, 4uz> transforms{};
-    bool is_valid = false;
+    int num = 0;
 };
 
 static_assert(sizeof(std::array<Record, 8uz>) <= 1024);
@@ -338,11 +338,11 @@ cache::Store store{};
 
         auto& record = (*props::intern::records[r.quot]->value)[r.rem];
 
-        if (record.is_valid) {
+        if (record.num == ctx->object->num) {
             store.Set(ctx->object, record.transforms);
         }
 
-        record.is_valid = store.Get(ctx->object, record.transforms);
+        record.num = store.Get(ctx->object, record.transforms) ? ctx->object->num : 0;
     } else {
         aul::Logger::Warning(L"Object index exceeds the cache limit");
     }
