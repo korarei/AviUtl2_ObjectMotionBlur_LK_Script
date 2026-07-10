@@ -47,46 +47,39 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
 
     auto& entries = objects[ctx->object->index];
 
-    int d = 0;
+    auto& prev = entries[0uz];
+    auto& curr = entries[1uz];
 
-    {
-        auto& prev = entries[0uz];
-        auto& curr = entries[1uz];
-
-        if (!curr.frame.has_value() || *curr.frame != ctx->object->frame) {
-            prev = curr;
-        }
-
-        curr = {
-            .transform =
-                {
-                    .pivot = Eigen::Map<const Eigen::Vector2f>(&ctx->param->cx),
-                    .position = Eigen::Map<const Eigen::Vector2f>(&ctx->param->x),
-                    .scale = Eigen::Map<const Eigen::Vector2f>(&ctx->param->sx),
-                    .rotation = ctx->param->rz,
-                },
-            .frame = ctx->object->frame,
-        };
-
-        if (ctx->object->frame > 0 && ctx->object->frame < 5) {
-            entries[static_cast<size_t>(ctx->object->frame) + 1uz] = curr;
-        }
-
-        if (prev.frame.has_value()) {
-            d = ctx->object->frame - *prev.frame;
-        }
+    if (!curr.frame.has_value() || *curr.frame != ctx->object->frame) {
+        prev = curr;
     }
 
-    if (d != 0 && d != 1) {
-        const float scale = 1.0f / static_cast<float>(d);
+    curr = {
+        .transform =
+            {
+                .pivot = Eigen::Map<const Eigen::Vector2f>(&ctx->param->cx),
+                .position = Eigen::Map<const Eigen::Vector2f>(&ctx->param->x),
+                .scale = Eigen::Map<const Eigen::Vector2f>(&ctx->param->sx),
+                .rotation = ctx->param->rz,
+            },
+        .frame = ctx->object->frame,
+    };
 
-        const auto& curr = entries[1uz].transform;
-        auto& prev = entries[0uz].transform;
+    if (ctx->object->frame > 0 && ctx->object->frame < 5) {
+        entries[static_cast<size_t>(ctx->object->frame) + 1uz] = curr;
+    }
 
-        prev.pivot = (prev.pivot - curr.pivot) * scale + curr.pivot;
-        prev.position = (prev.position - curr.position) * scale + curr.position;
-        prev.scale = ((prev.scale - curr.scale) * scale + curr.scale).cwiseMax(kEpsilon);
-        prev.rotation = ((prev.rotation - curr.rotation) * scale) + curr.rotation;
+    if (prev.frame.has_value()) {
+        if (const int d = ctx->object->frame - *prev.frame; d != 0 && d != 1) {
+            const float t = 1.0f / static_cast<float>(d);
+
+            const auto lerp = [&](const Eigen::Vector2f& a, const Eigen::Vector2f& b) { return a + (b - a) * t; };
+
+            prev.transform.pivot = lerp(curr.transform.pivot, prev.transform.pivot);
+            prev.transform.position = lerp(curr.transform.position, prev.transform.position);
+            prev.transform.scale = lerp(curr.transform.scale, prev.transform.scale).cwiseMax(kEpsilon);
+            prev.transform.rotation = std::lerp(curr.transform.rotation, prev.transform.rotation, t);
+        }
     }
 }
 
