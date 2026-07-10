@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -39,12 +40,13 @@ class Store {
     Store() = default;
     ~Store() = default;
 
-    [[nodiscard]] const Transform& Get(const OBJECT_INFO* ctx, int pos);
+    [[nodiscard]] Transform Get(const OBJECT_INFO* ctx, int pos);
     void Set(const FILTER_PROC_VIDEO* ctx);
 
     void Reset();
 
   private:
+    std::mutex mutex_;
     std::unordered_map<int64_t, std::shared_ptr<std::vector<std::array<Entry, 6uz>>>> cache_;
 };
 }  // namespace blur::object::cache

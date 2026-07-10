@@ -5,11 +5,13 @@ constexpr float kEpsilon = Eigen::NumTraits<float>::dummy_precision();
 }
 
 namespace blur::object::cache {
-const Store::Transform& Store::Get(const OBJECT_INFO* ctx, int pos) {
+Store::Transform Store::Get(const OBJECT_INFO* ctx, int pos) {
     if (ctx->index < 0 || ctx->index >= ctx->num) {
         static const Transform identity{};
         return identity;
     }
+
+    const std::lock_guard lock(mutex_);
 
     auto& objects = cache_[ctx->effect_id];
 
@@ -38,6 +40,8 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
     if (ctx->object->index < 0 || ctx->object->index >= ctx->object->num) {
         return;
     }
+
+    const std::lock_guard lock(mutex_);
 
     auto& objects = cache_[ctx->object->effect_id];
 
@@ -95,6 +99,8 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
 }
 
 void Store::Reset() {
+    const std::lock_guard lock(mutex_);
+
     std::unordered_map<int64_t, std::shared_ptr<std::vector<std::array<Entry, 6uz>>>>{}.swap(cache_);
 }
 }  // namespace blur::object::cache
