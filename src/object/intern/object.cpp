@@ -7,7 +7,6 @@
 #include <numbers>
 #include <vector>
 
-#include <Eigen/Dense>
 #include <Eigen/Geometry>
 
 #pragma warning(push)
