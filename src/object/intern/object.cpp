@@ -124,12 +124,9 @@ cache::Store store{};
         int layer = ctx->object->layer - 1;
 
         for (int i = layer; i >= 0; --i) {
-            /*
-            v2.0.54 では非対応
             if (!ctx->edit->get_layer_enable(i)) {
                 continue;
             }
-            */
 
             auto* const object_handle = ctx->edit->find_object(i, frame);
 
@@ -159,18 +156,6 @@ cache::Store store{};
                     continue;
                 }
 
-                {
-                    const auto meta = object.substr(meta_st, empty_st - meta_st);
-
-                    if (auto st = meta.find("\ngroup.control="); st != std::string_view::npos) {
-                        st += sizeof("\ngroup.control=") - 1uz;
-
-                        if (meta.substr(st, meta.find_first_of("\r\n", st) - st) == "0") {
-                            break;
-                        }
-                    }
-                }
-
                 const auto empty = object.substr(empty_st, object.find("[Object.1]") - empty_st);
 
                 if (auto st = empty.find("\n対象レイヤー数="); st != std::string_view::npos) {
@@ -181,13 +166,21 @@ cache::Store store{};
                     if (!range.has_value() || (*range != 0 && *range < layer - i)) {
                         continue;
                     }
-                } else {
-                    continue;
+
+                    handles.push_back(candidate);
+                    layer = i;
+
+                    const auto meta = object.substr(meta_st, empty_st - meta_st);
+
+                    if (st = meta.find("\ngroup.control="); st != std::string_view::npos) {
+                        st += sizeof("\ngroup.control=") - 1uz;
+
+                        if (meta.substr(st, meta.find_first_of("\r\n", st) - st) == "0") {
+                            break;
+                        }
+                    }
                 }
             }
-
-            handles.push_back(candidate);
-            layer = i;
         }
     }
 
