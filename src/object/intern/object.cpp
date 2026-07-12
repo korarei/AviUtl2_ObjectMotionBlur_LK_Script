@@ -81,13 +81,13 @@ FILTER_ITEM_TRACK mix(L"Compositing::Mix", 100.0, 0.0, 100.0, 0.01);
 }  // namespace compositing
 FILTER_ITEM_GROUP additional_options(L"Additional Options", false);
 FILTER_ITEM_CHECK should_print_diagnostics(L"Diagnostics", false);
-namespace intern {
+namespace internal {
 struct Record {
     std::array<cache::Store::Transform, 4uz> transforms{};
     int num = 0;
 };
 
-static_assert(sizeof(std::array<Record, 8uz>) <= 1024);
+static_assert(sizeof(std::array<Record, 8uz>) <= 1024uz);
 
 FILTER_ITEM_DATA<std::array<Record, 8uz>> records0(L"Internal::Records[0]");
 FILTER_ITEM_DATA<std::array<Record, 8uz>> records1(L"Internal::Records[1]");
@@ -101,7 +101,7 @@ FILTER_ITEM_DATA<std::array<Record, 8uz>> records7(L"Internal::Records[7]");
 std::array<FILTER_ITEM_DATA<std::array<Record, 8uz>>*, 8uz> records = {
     &records0, &records1, &records2, &records3, &records4, &records5, &records6, &records7,
 };
-}  // namespace intern
+}  // namespace internal
 }  // namespace properties
 
 d3d::Renderer renderer{};
@@ -329,7 +329,7 @@ cache::Store store{};
     if (ctx->object->index >= 0 && ctx->object->index < ctx->object->num && ctx->object->index < 64) {
         const auto r = std::div(ctx->object->index, 8);
 
-        auto& record = (*props::intern::records[r.quot]->value)[r.rem];
+        auto& record = (*props::internal::records[r.quot]->value)[r.rem];
 
         if (record.num == ctx->object->num) {
             store.Set(ctx->object, record.transforms);
@@ -473,8 +473,8 @@ cache::Store store{};
 
     Eigen::AlignedBox2f box(Eigen::Vector2f::Zero(), object.dimensions);
 
-    for (int i = 0; i < samples; ++i) {
-        const auto t = 1.0f - (step * static_cast<float>(i));
+    for (int i = 0; i <= samples; ++i) {
+        const auto t = step * static_cast<float>(i);
 
         Eigen::Affine2f curr_to_prev = curr_to_world;
 
@@ -676,14 +676,14 @@ constinit void* props[] = {
     &properties::compositing::mix,
     &properties::additional_options,
     &properties::should_print_diagnostics,
-    &properties::intern::records0,
-    &properties::intern::records1,
-    &properties::intern::records2,
-    &properties::intern::records3,
-    &properties::intern::records4,
-    &properties::intern::records5,
-    &properties::intern::records6,
-    &properties::intern::records7,
+    &properties::internal::records0,
+    &properties::internal::records1,
+    &properties::internal::records2,
+    &properties::internal::records3,
+    &properties::internal::records4,
+    &properties::internal::records5,
+    &properties::internal::records6,
+    &properties::internal::records7,
     nullptr,
 };
 
