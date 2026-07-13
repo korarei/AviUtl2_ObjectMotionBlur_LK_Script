@@ -1,10 +1,13 @@
 #include "../object.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>  // IWYU pragma: keep
 #include <format>
 #include <numbers>
+#include <optional>
+#include <span>
 #include <vector>
 
 #include <Eigen/Geometry>
@@ -273,49 +276,71 @@ cache::Store store{};
     return snapshot;
 }
 
-[[nodiscard]] float ExtrapolateScalar(const std::vector<float>& values, int degree) {
+[[nodiscard]] float ExtrapolateScalarLinear(std::span<const float> values) {
     const int rows = static_cast<int>(values.size());
-    const int cols = degree + 1;
 
-    Eigen::MatrixXf a(rows, cols);
-    Eigen::VectorXf b(rows);
+    Eigen::Matrix<float, 5, 2> a;
+    Eigen::Vector<float, 5> b;
 
     for (int row = 0; row < rows; ++row) {
         const float t = static_cast<float>(row);
         const float w = std::sqrt(std::exp(-t));
         float x = 1.0f;
 
-        for (int col = 0; col < cols; ++col) {
+        for (int col = 0; col < 2; ++col) {
             a(row, col) = x * w;
             x *= t;
         }
 
-        b(row) = values[static_cast<size_t>(row)] * w;
+        b[row] = values[row] * w;
     }
 
-    const Eigen::VectorXf fs = a.colPivHouseholderQr().solve(b);
+    const Eigen::Vector2f fs = a.topRows(rows).colPivHouseholderQr().solve(b.head(rows));
 
-    float result = 0.0f;
-    float x = 1.0f;
-
-    for (int col = 0; col < cols; ++col) {
-        result += fs(col) * x;
-        x *= -1.0f;
-    }
-
-    return result;
+    return fs[0ll] - fs[1ll];
 }
 
-[[nodiscard]] Eigen::Vector2f ExtrapolateVector(const std::vector<Eigen::Vector2f>& values, int degree) {
-    std::vector<float> xs(values.size());
-    std::vector<float> ys(values.size());
+[[nodiscard]] float ExtrapolateScalarQuadratic(std::span<const float> values) {
+    const int rows = static_cast<int>(values.size());
+
+    Eigen::Matrix<float, 5, 3> a;
+    Eigen::Vector<float, 5> b;
+
+    for (int row = 0; row < rows; ++row) {
+        const float t = static_cast<float>(row);
+        const float w = std::sqrt(std::exp(-t));
+        float x = 1.0f;
+
+        for (int col = 0; col < 3; ++col) {
+            a(row, col) = x * w;
+            x *= t;
+        }
+
+        b[row] = values[row] * w;
+    }
+
+    const Eigen::Vector3f fs = a.topRows(rows).colPivHouseholderQr().solve(b.head(rows));
+
+    return fs[0ll] - fs[1ll] + fs[2ll];
+}
+
+[[nodiscard]] float ExtrapolateScalar(std::span<const float> values, int degree) {
+    return degree == 1 ? ExtrapolateScalarLinear(values) : ExtrapolateScalarQuadratic(values);
+}
+
+[[nodiscard]] Eigen::Vector2f ExtrapolateVector(std::span<const Eigen::Vector2f> values, int degree) {
+    std::array<float, 5uz> xs{};
+    std::array<float, 5uz> ys{};
 
     for (size_t i = 0; i < values.size(); ++i) {
         xs[i] = values[i].x();
         ys[i] = values[i].y();
     }
 
-    return {ExtrapolateScalar(xs, degree), ExtrapolateScalar(ys, degree)};
+    return {
+        ExtrapolateScalar(std::span(xs.data(), values.size()), degree),
+        ExtrapolateScalar(std::span(ys.data(), values.size()), degree),
+    };
 }
 
 // 0フレーム以外呼び出し禁止
@@ -340,38 +365,44 @@ cache::Store store{};
         aul::Logger::Warning(L"Object index exceeds the cache limit");
     }
 
-    const size_t samples = static_cast<size_t>(props::extrapolation::value) + 3uz;
-    std::vector<Object::Snapshot> snapshots;
-    snapshots.reserve(samples);
-    snapshots.push_back(zero);
+    const int degree = props::extrapolation::value;
+    const size_t samples = static_cast<size_t>(degree) + 3uz;
+    std::array<std::optional<Object::Snapshot>, 5uz> snapshots{};
+    snapshots[0uz].emplace(zero);
 
     for (size_t i = 1; i < samples; ++i) {
-        snapshots.push_back(GetObjectTransforms(static_cast<int>(i), ctx));
+        snapshots[i].emplace(GetObjectTransforms(static_cast<int>(i), ctx));
     }
+
+    const auto snapshot_at = [&](size_t i) -> const Object::Snapshot& { return *snapshots[i]; };
 
     size_t depth = 0uz;
 
-    for (const auto& snapshot : snapshots) {
-        depth = std::max(depth, snapshot.transforms.size());
+    for (size_t i = 0uz; i < samples; ++i) {
+        depth = std::max(depth, snapshot_at(i).transforms.size());
     }
 
-    std::vector<Eigen::Vector2f> pivots(samples);
+    std::array<Eigen::Vector2f, 5uz> pivots{};
 
     for (size_t i = 0; i < samples; ++i) {
-        pivots[i] = snapshots[i].pivot;
+        pivots[i] = snapshot_at(i).pivot;
     }
 
     std::vector<Object::Transform> transforms(depth);
+    std::array<Eigen::Vector2f, 5uz> positions{};
+    std::array<Eigen::Vector2f, 5uz> scales{};
+    std::array<float, 5uz> rotations{};
+
+    const Object::Transform identity{};
+    const auto transform_at = [&](size_t sample, size_t index) -> const Object::Transform& {
+        const auto& snapshot = snapshot_at(sample);
+        const size_t offset = depth - snapshot.transforms.size();
+        return (index < offset) ? identity : snapshot.transforms[index - offset];
+    };
 
     for (size_t i = 0; i < depth; ++i) {
-        std::vector<Eigen::Vector2f> positions(samples);
-        std::vector<Eigen::Vector2f> scales(samples);
-        std::vector<float> rotations(samples);
-
         for (size_t j = 0; j < samples; ++j) {
-            const size_t offset = depth - snapshots[j].transforms.size();
-            const Object::Transform identity{};
-            const auto& transform = (i < offset) ? identity : snapshots[j].transforms[i - offset];
+            const auto& transform = transform_at(j, i);
 
             positions[j] = transform.position;
             scales[j] = transform.scale.cwiseMax(kEpsilon).array().log();
@@ -379,14 +410,14 @@ cache::Store store{};
         }
 
         transforms[i] = {
-            .position = ExtrapolateVector(positions, props::extrapolation::value),
-            .scale = ExtrapolateVector(scales, props::extrapolation::value).array().exp().cwiseMax(kEpsilon),
-            .rotation = ExtrapolateScalar(rotations, props::extrapolation::value),
+            .position = ExtrapolateVector(std::span(positions.data(), samples), degree),
+            .scale = ExtrapolateVector(std::span(scales.data(), samples), degree).array().exp().cwiseMax(kEpsilon),
+            .rotation = ExtrapolateScalar(std::span(rotations.data(), samples), degree),
         };
     }
 
     return Object::Snapshot{
-        .pivot = ExtrapolateVector(pivots, props::extrapolation::value),
+        .pivot = ExtrapolateVector(std::span(pivots.data(), samples), degree),
         .transforms = std::move(transforms),
     };
 }
