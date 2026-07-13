@@ -4,12 +4,12 @@
 #include <fullscreen.h>
 
 namespace blur::object::direct3d {
-Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* src, const std::vector<SampleTransform>& xforms,
+Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* src, const std::vector<AffineMatrix>& subframe_xforms,
                                          const Param& param) const {
     static constexpr ID3D11ShaderResourceView* null_srvs[2] = {nullptr, nullptr};
     constexpr ID3D11RenderTargetView* null_rtv = nullptr;
 
-    if (xforms.empty()) {
+    if (subframe_xforms.empty()) {
         return std::unexpected(L"Structured buffer is empty.");
     }
 
@@ -37,27 +37,27 @@ Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* src, const std::vector
     owner_.ctx_->OMSetRenderTargets(1u, rtv.GetAddressOf(), nullptr);
 
     {
-        if (xforms.size() <= owner_.xforms_.capacity) {
+        if (subframe_xforms.size() <= owner_.xforms_.capacity) {
             D3D11_MAPPED_SUBRESOURCE mapped{};
 
             if (FAILED(owner_.ctx_->Map(owner_.xforms_.buffer.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped))) {
                 return std::unexpected(L"Failed to map structured buffer");
             }
 
-            std::memcpy(mapped.pData, xforms.data(), xforms.size() * sizeof(SampleTransform));
+            std::memcpy(mapped.pData, subframe_xforms.data(), subframe_xforms.size() * sizeof(AffineMatrix));
             owner_.ctx_->Unmap(owner_.xforms_.buffer.Get(), 0u);
         } else {
             const D3D11_BUFFER_DESC desc{
-                .ByteWidth = static_cast<uint32_t>(xforms.size() * sizeof(SampleTransform)),
+                .ByteWidth = static_cast<uint32_t>(subframe_xforms.size() * sizeof(AffineMatrix)),
                 .Usage = D3D11_USAGE_DYNAMIC,
                 .BindFlags = D3D11_BIND_SHADER_RESOURCE,
                 .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
                 .MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED,
-                .StructureByteStride = sizeof(SampleTransform),
+                .StructureByteStride = sizeof(AffineMatrix),
             };
 
             const D3D11_SUBRESOURCE_DATA data{
-                .pSysMem = xforms.data(),
+                .pSysMem = subframe_xforms.data(),
                 .SysMemPitch = 0u,
                 .SysMemSlicePitch = 0u,
             };
@@ -76,7 +76,7 @@ Renderer::Result Renderer::Context::Draw(ID3D11Texture2D* src, const std::vector
 
             owner_.xforms_.buffer = std::move(buf);
             owner_.xforms_.srv = std::move(srv);
-            owner_.xforms_.capacity = xforms.size();
+            owner_.xforms_.capacity = subframe_xforms.size();
         }
 
         ComPtr<ID3D11ShaderResourceView> srv;

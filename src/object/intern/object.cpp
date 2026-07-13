@@ -501,7 +501,7 @@ cache::Store store{};
     return box;
 }
 
-void CreateSampleTransforms(const Object& object, int samples, std::vector<d3d::Renderer::SampleTransform>& xforms) {
+void CreateSubFrameTransforms(const Object& object, int samples, std::vector<d3d::Renderer::AffineMatrix>& xforms) {
     samples -= 1;
 
     const auto& state = object.state;
@@ -599,23 +599,26 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             return false;
         }
 
-        thread_local std::vector<d3d::Renderer::SampleTransform> sample_xforms;
-        CreateSampleTransforms(object, samples, sample_xforms);
+        thread_local std::vector<d3d::Renderer::AffineMatrix> subframe_xforms;
+        CreateSubFrameTransforms(object, samples, subframe_xforms);
 
         const float mix = std::clamp(static_cast<float>(properties::compositing::mix.value) * 0.02f, 0.0f, 2.0f);
 
         const d3d::Renderer::Param param{
-            .base_transform_row0 =
+            .base_transform =
                 {
-                    object.state.current.world_transform(0, 0),
-                    object.state.current.world_transform(0, 1),
-                    object.state.current.world_transform(0, 2),
-                },
-            .base_transform_row1 =
-                {
-                    object.state.current.world_transform(1, 0),
-                    object.state.current.world_transform(1, 1),
-                    object.state.current.world_transform(1, 2),
+                    .row0 =
+                        {
+                            object.state.current.world_transform(0, 0),
+                            object.state.current.world_transform(0, 1),
+                            object.state.current.world_transform(0, 2),
+                        },
+                    .row1 =
+                        {
+                            object.state.current.world_transform(1, 0),
+                            object.state.current.world_transform(1, 1),
+                            object.state.current.world_transform(1, 2),
+                        },
                 },
             .pivot =
                 {
@@ -627,11 +630,6 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                     origin.x(),
                     origin.y(),
                 },
-            .texel =
-                {
-                    1.0f / object.dimensions.x(),
-                    1.0f / object.dimensions.y(),
-                },
             .amount = amount,
             .samples = samples,
             .mix =
@@ -642,7 +640,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         };
 
         const auto result = renderer.Render(
-            dst, [&param, src](d3d::Renderer::Context& ctx) { return ctx.Draw(src, sample_xforms, param); });
+            dst, [&param, src](d3d::Renderer::Context& ctx) { return ctx.Draw(src, subframe_xforms, param); });
 
         if (!result.has_value()) {
             aul::Logger::Error(result.error());
