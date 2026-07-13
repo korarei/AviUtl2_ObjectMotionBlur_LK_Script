@@ -40,7 +40,7 @@
 
 オブジェクトにこのスクリプトを追加することで，トラックバーによる移動に関して線形的にフレーム補間したモーションブラーをかける．
 
-また，追加エフェクト，スクリプトによる座標変化はデータを保持することにより計算で扱うことが可能である． 
+また，追加エフェクト，スクリプトによる座標変化はデータを保持することにより計算で扱うことが可能である．
 
 ### 対象項目
 
@@ -81,7 +81,7 @@
 描画精度．サンプル数の上限値を設定する．
 
 上げると描画が綺麗になる代わりに重くなる．一方，下げると描画が粗くなる代わりに軽くなる．
-  
+
 必要サンプル数はダイアログ内の`Print Information`を有効にするとコンソールで確認できる．
 
 初期値は`256`とやや小さい値にしている．
@@ -152,216 +152,16 @@
 
 初期値は`OFF`
 
-#### PI
+## ビルド方法
 
-パラメータインジェクション．
+[リリース用ワークフロー](./.github/workflows/releaser.yml)を参照されたい．
 
-```lua
-{
-  shutter_angle = 180.0, -- 360.0を超える値も指定可能 (ただ伸ばすだけ)
-  render_sample_limit = 256,
-  preview_sample_limit = 0,
-  extrapolation = 2,
-  resize = true, -- booleanも可
-  geo_cache = 0,
-  cache_purge = 0,
-  mix = 0.0,
-  print_info = false, -- booleanも可
-}
-```
+## ライセンス
 
-`{}`は既に挿入済みであるため，PI項目では中身のみ記載する．
+本プログラムのライセンスは [LICENSE](./LICENSE) を参照されたい．
 
-## スクリプトモジュール
+また，本プログラムが利用するサードパーティ製ライブラリ等のライセンス情報は [THIRD_PARTY_LICENSES](./THIRD_PARTY_LICENSES.md) に記載している．
 
-### version 関数
+## 更新履歴
 
-スクリプトモジュールのバージョンを返す．
-
-#### 戻り値
-
-1. `version` (number) : バージョン情報 
-
-### compute_motion 関数
-
-座標データから同次変換行列等を求める．
-
-> [!CAUTION]
-> `obj.num`が1以上の場合にのみ使用可能．
-
-#### 引数
-
-1. `params` (table) : 設定値
-1. `context` (table) : オブジェクトの情報等
-1. `xform_curr` (table) : 現在の描画基準座標
-1. `xform_prev` (table) : 過去の描画基準座標
-1. `geo_curr` (table) : 現在のオブジェクト設定値 (座標)
-1. `data` (userdata, option) : 汎用データ (64バイト)
-1. `size` (number, option) : 汎用データサイズ
-
-> [!IMPORTANT]
-> `data`を渡すときは必ず`size`を渡す必要がある．
-
-#### 戻り値
-
-1. `margin` (table) : 領域拡張量
-1. `samples` (number) : サンプリング数
-1. `xform_matrix` (table) : 2つ目のサンプリング地点までの同次変換行列の逆行列
-1. `scaling_matrix` (table) : 2つ目のサンプリング地点でのスケーリング行列の逆行列
-1. `drift_vector` (table) : 2つ目のサンプリング地点での中心座標ずれの逆ベクトル
-
-> [!NOTE]
-> 行列，ベクトルは列優先で一次元配列である．
->
-> 行列は3次元正方行列，ベクトルは3次元ベクトルである．
->
-> `samples`が1のとき，単位行列，0ベクトルとなる．
-
-> [!TIP]
-> `xform_matrix`，`scaling_matrix`，`drift_vector`について．
->
-> 現在位置 $\Sigma_0$ から2つ目のサンプリング位置 $\Sigma_1$ への変換を ${}^0T_1$ とし， $\Sigma_1$ からターゲット座標 $\Sigma_t$ への変換を ${}^1S_t$ とする．
->
-> 中心 $\boldsymbol{V}$ とズレ量 $\boldsymbol{d}$ を用いると， $\Sigma_t$ での中心座標 ${}^t\boldsymbol{V}$ は以下のように表現できる．
->
-> $$
-> {}^t\boldsymbol{V} = \boldsymbol{V} + \boldsymbol{d}
-> $$
->
-> このとき， $\Sigma_0$ から見た ${}^t\boldsymbol{V}$ である ${}^0\boldsymbol{V}$ は以下のように表現できる．
->
-> $$
-> {}^0\boldsymbol{V} = {}^0T_1 {}^1S_t {}^t\boldsymbol{V}
-> $$
->
-> 以上よりシェーダーではこの逆変換を行えばよいので，
->
-> $$
-> {}^t\boldsymbol{V} = {}^1S_t^{-1} {}^0T_1^{-1} {}^0\boldsymbol{V} = {}^tS_1 {}^1T_0 {}^0\boldsymbol{V}
-> $$
->
-> ここで， ${}^1T_0$ は`xform_matrix`， ${}^tS_1$ は`scaling_matrix`， $-\boldsymbol{d}$ は`drift_vector`である．
-
-#### テーブル
-
-```lua
-local params = {
-  amt = 1.0, -- shutter_angle / 360.0
-  smp_lim = 256,
-  ext = 2,
-  geo_cache = 0,
-  cache_purge = 0,
-  print_info = false
-}
-
-local context = {
-  name = "SCRIPT_NAME", -- 独自の名前を入力
-  w = obj.w,
-  h = obj.h,
-  cx = obj.getvalue("cx") + obj.cx,
-  cy = obj.getvalue("cy") + obj.cy,
-  id = obj.id,
-  idx = obj.index,
-  num = obj.num,
-  frame = obj.frame,
-  range = obj.totalframe
-}
-
-local xform = {
-  cx = obj.getvalue("cx"),
-  cy = obj.getvalue("cy"),
-  x = obj.getvalue("x"),
-  y = obj.getvalue("y"),
-  rz = obj.getvalue("rz"),
-  sx = obj.getvalue("sx"),
-  sy = obj.getvalue("sy")
-}
-
-local geo = {
-  cx = obj.cx,
-  cy = obj.cy,
-  ox = obj.ox,
-  oy = obj.oy,
-  rz = obj.rz,
-  sx = obj.sx,
-  sy = obj.sy
-}
-
-local margin = {
-  left = 0,
-  top = 0,
-  right = 0,
-  bottom = 0
-}
-```
-
-##  ビルド方法
-
-`.github/workflows`内の`releaser.yml`に記載．
-
-## License
-LICENSEファイルに記載．
-
-## Credits
-
-### AviUtl ExEdit2 Plugin SDK
-
-https://spring-fragrance.mints.ne.jp/aviutl/
-
----
-
-The MIT License
-
-Copyright (c) 2025 Kenkun
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
-## Change Log
-- **v1.1.1**
-  - UIのグルーピング． (beta22以降必要)
-  - `Cache Purge`が`Auto`のときの条件分岐を修正．
-
-- **v1.1.0**
-  - `.mod2`化．
-  - 縦横比変形に対応．
-  - 外挿計算結果をプロジェクトファイルに埋め込むようにした．
-  - `Cache Control`を`Cache Purge`に変更．(破壊的)
-
-- **v1.0.0**
-  - `Object ID`をスクリプト側で入手できるように変更．
-  - `Print Information`で表示される`Required Samples`が1少なかった問題の解決．
-
-- **v0.2.2**
-  - luaの`require`から呼び出せるように変更．
-  - リサイズ計算の精度向上．
-  - `PI`項目名の間違いを修正．
-
-- **v0.2.1**
-  - 平均計算ミスの修正．
-  - リサイズ計算で中心座標に対してブラー量を考慮していなかった問題の修正．
-  - Geometryデータの保存クラスに修飾子追加．
-
-- **v0.2.0**
-  - 中心座標をスクリプト側で入手できるように変更．
-  - サンプル数計算をリサイズ量に基づいて計算するように変更．
-  - `Print Information`で表示される必要サンプル数が描画時のサンプル数であった問題を修正．
-  - Geometryデータの保存方法を変更．
-
-- **v0.1.0**
-  - Release
+[CHANGELOG](./CHANGELOG.md) を参照されたい．
