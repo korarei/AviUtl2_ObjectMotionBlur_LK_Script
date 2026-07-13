@@ -3,50 +3,51 @@
 ![GitHub License](https://img.shields.io/github/license/korarei/AviUtl2_ObjectMotionBlur_LK_Script)
 ![GitHub Last commit](https://img.shields.io/github/last-commit/korarei/AviUtl2_ObjectMotionBlur_LK_Script)
 ![GitHub Downloads](https://img.shields.io/github/downloads/korarei/AviUtl2_ObjectMotionBlur_LK_Script/total)
-![GitHub Release](https://img.shields.io/github/v/release/korarei/AviUtl2_ObjectMotionBlur_LK_Script)
+[![GitHub Release][releases-badge]][releases-url]
+[![AviUtl2 Catalog][catalog-badge]][catalog-url]
 
-オブジェクトにモーションブラーをかけるスクリプト．
+AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 
-[ダウンロードはこちらから](https://github.com/korarei/AviUtl2_ObjectMotionBlur_LK_Script/releases)
+以下の機能が追加される．
+
+- ぼかし\\ObjectMotionBlur_LK: オブジェクトに 2D モーションブラーをかける
 
 ## 動作確認
 
-- [AviUtl ExEdit2 beta22](https://spring-fragrance.mints.ne.jp/aviutl/)
+- [AviUtl ExEdit2 v2.1.0](https://spring-fragrance.mints.ne.jp/aviutl/)
 
 > [!CAUTION]
-> beta20以降必須．
+> v2.1.0 以降必須．
 
-## 導入・削除・更新
+## 導入・更新・削除
 
-初期配置場所は`ぼかし`である．
+### パッケージファイルからインストール
 
-`オブジェクト追加メニューの設定`から`ラベル`を変更することで任意の場所へ移動可能．
+#### 導入・更新
 
-### 導入
+[こちら][releases-url]からダウンロードした `*.au2pkg.zip` をAviUtl2にD&D．
 
-1.  同梱の`*.anm2`と`*.mod2`を`%ProgramData%`内の`aviutl2\Script`フォルダまたはその子フォルダに入れる．
+#### 削除
 
-`beta4`以降では`aviutl2.exe`と同じ階層内の`data\Script`フォルダ内でも可．
+パッケージ情報からアンインストールする．
 
-### 削除
+### [AviUtl2 カタログ](https://github.com/Neosku/aviutl2-catalog)からインストール
 
-1.  導入したものを削除する．
-
-### 更新
-
-1.  導入したものを上書きする．
+[こちら][catalog-url]から導入，更新，削除を行う．
 
 ## 使い方
 
-オブジェクトにこのスクリプトを追加することで，トラックバーによる移動に関して線形的にフレーム補間したモーションブラーをかける．
+### ObjectMotionBlur_LK
 
-また，追加エフェクト，スクリプトによる座標変化はデータを保持することにより計算で扱うことが可能である．
+初期ラベル: `ぼかし`
 
-### 対象項目
+トラックバーによる二次元座標変換に関して線形的にフレーム補間したモーションブラーをかける．
 
-出力項目 (標準描画等) の設定値は以下の7項目が対象．
+#### 対象項目
 
-拡大率と縦横比はX軸方向とY軸方向の拡大率として取得している．
+出力項目 (標準描画等) の設定値は以下の 7 項目が対象．
+
+拡大率と縦横比は X 軸方向と Y 軸方向の拡大率として取得している．
 
 - X
 - Y
@@ -56,9 +57,7 @@
 - 拡大率
 - 縦横比
 
-オブジェクトの設定値 (基本効果やスクリプトなどの追加エフェクトによるもの) は以下の7項目が対象．
-
-これらの項目は`Geo Cache`が`Full`か`Minimal`の時に有効．
+オブジェクトの設定値 (フィルタ効果などのエフェクトによるもの) は以下の 7 項目が対象．
 
 - obj.ox
 - obj.oy
@@ -68,89 +67,53 @@
 - obj.sx
 - obj.sy
 
-### パラメータ
+グループ制御の設定値は以下の 4 項目が対象．
 
-#### Shutter Angle
+- X
+- Y
+- Z軸回転
+- 拡大率
 
-ブラー幅 (360度で1フレーム移動量と等しい)．
+#### パラメータ
 
-初期値は`180.0`で一般的な値を採用している．
+- <details>
+  <summary>Shutter Angle</summary>
 
-#### Sample Limit
+  - Shutter::Angle: ブラーの範囲．360度で1フレーム移動量と等しい．
+  - Shutter::Phase: ブラーの位置． `Shutter::Angle` * -0.5 で中央．
 
-描画精度．サンプル数の上限値を設定する．
+  </details>
 
-上げると描画が綺麗になる代わりに重くなる．一方，下げると描画が粗くなる代わりに軽くなる．
+- <details>
+  <summary>Sampling</summary>
 
-必要サンプル数はダイアログ内の`Print Information`を有効にするとコンソールで確認できる．
+  - Sampling::Viewport::Sample Limit: プレビューでの描画精度．サンプル数の上限値を設定する．
+  - Sampling::Render::Sample Limit: 出力時の描画精度．サンプル数の上限値を設定する．
 
-初期値は`256`とやや小さい値にしている．
+  </details>
 
-> [!NOTE]
-> `2`未満のときブラーは表示されない．
+- <details>
+  <summary>Compositing</summary>
 
-#### Preview Limit
+  - Compositing::Mix: オリジナル画像とブラーを合成する． `50.00` で標準モーションブラーの `残像` に近い挙動になる．
+  - Compositing::Falloff: ブラーウェイトの勾配．
 
-プレビュー時の描画精度．`0`以外の値にすることで，編集時に描画制度を下げて軽量にすることができる．出力時は`Sample Limit`の値になる．
+> [!TIP]
+> `Compositing::Falloff` を `100.00` にすると標準モーションブラーエフェクトに近い挙動になる．
 
-初期値は`0`でこの機能を無効にしている．
+  </details>
 
-#### Extrapolation
+- <details>
+  <summary>Additional Options</summary>
 
-0フレームより前を仮想的に計算する．計算方法として以下の3つある．
+  - Extrapolation: 0 フレームより前を仮想的に計算する．
+    - None (計算しない)
+    - Linear (1次補間)
+    - Quadratic (2次補間)
+  - Resize: ブラーが見切れないように画像サイズを変更する．
+  - Diagnostics: コンソールに情報を表示する．
 
-- None (計算しない)
-- Linear (1次補間)
-- Quadratic (2次補間)
-
-初期値は`Quadratic`
-
-#### Resize
-
-サイズを変更．`ON`でブラーが見切れないようにする．
-
-初期値は`ON`
-
-#### Mix
-
-元画像を元の位置に描画する．(アルファブレンド)
-
-かつての標準モーションブラーエフェクトの`残像`のようなもの．
-
-初期値は`0.0`
-
-#### Geo Cache
-
-エフェクトによる座標変化を計算に入れるかどうかを指定する．保存方法は以下の3つ．
-
-- None (保存しない)
-- Full (全フレーム保存する)
-- Minimal (必要最低限だけ保存する)
-
-初期値は`None`
-
-#### Cache Purge
-
-キャッシュ削除に関して以下の4つから設定する．
-
-- None (特に何も行わない)
-- Auto (このオブジェクトの最終フレームでこのオブジェクトのデータのみ削除する)
-- All (スクリプトが読み込まれた時，すべて削除する)
-- Active (スクリプトが読み込まれた時，このオブジェクトのデータのみ削除する)
-
-初期値は`None`
-
-#### Print Information
-
-コンソールに情報を表示する．
-
-表示される情報は以下のとおり
-
-- Object ID (所謂`obj.id`．キャッシュはObject IDごとに保存される．)
-- Index (所謂`obj.index`．個別オブジェクトのインデックス．)
-- Required Samples (必要なサンプル数．これを目安に`Sample Limit`を設定してほしい．)
-
-初期値は`OFF`
+  </details>
 
 ## ビルド方法
 
@@ -165,3 +128,10 @@
 ## 更新履歴
 
 [CHANGELOG](./CHANGELOG.md) を参照されたい．
+
+<!-- links -->
+
+[releases-url]: https://github.com/korarei/AviUtl2_ObjectMotionBlur_LK_Script/releases
+[releases-badge]: https://img.shields.io/github/v/release/korarei/AviUtl2_ObjectMotionBlur_LK_Script
+[catalog-url]: https://aviutl2-catalog-badge.sevenc7c.workers.dev/package/korarei.ObjectMotionBlur_LK
+[catalog-badge]: https://aviutl2-catalog-badge.sevenc7c.workers.dev/badge/v/korarei.ObjectMotionBlur_LK
