@@ -77,7 +77,7 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 #### パラメータ
 
 - <details>
-  <summary>Shutter Angle</summary>
+  <summary>Shutter</summary>
 
   - Shutter::Angle: ブラーの範囲．360度で1フレーム移動量と等しい．
   - Shutter::Phase: ブラーの位置． `Shutter::Angle` * -0.5 で中央．
@@ -98,8 +98,8 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
   - Compositing::Mix: オリジナル画像とブラーを合成する． `50.00` で標準モーションブラーの `残像` に近い挙動になる．
   - Compositing::Falloff: ブラーウェイトの勾配．
 
-> [!TIP]
-> `Compositing::Falloff` を `100.00` にすると標準モーションブラーエフェクトに近い挙動になる．
+  > [!TIP]
+  > `Compositing::Falloff` を `100.00` にすると標準モーションブラーエフェクトに近い挙動になる．
 
   </details>
 
