@@ -45,11 +45,12 @@ struct Object {
     };
 
     struct State {
-        Snapshot previous{};
-        Snapshot current{};
+        Snapshot start{};
+        Snapshot end{};
         size_t depth = 0u;
     };
 
+    Eigen::Affine2f transform = Eigen::Affine2f::Identity();
     Eigen::Vector2f dimensions = Eigen::Vector2f::Zero();
     State state{};
 };
@@ -62,22 +63,23 @@ struct Box {
 namespace properties {
 namespace shutter {
 FILTER_ITEM_GROUP name(L"Shutter", true);
-FILTER_ITEM_TRACK angle(L"Shutter::Angle", 180.0, 0.0, 360.0, 0.01);
+FILTER_ITEM_TRACK angle(L"Shutter::Angle", 180.0, 0.0, 720.0, 0.01);
+FILTER_ITEM_TRACK phase(L"Shutter::Phase", -90.0, -360.0, 360.0, 0.01);
 }  // namespace shutter
 namespace sampling {
 FILTER_ITEM_GROUP name(L"Sampling", false);
 namespace viewport {
 FILTER_ITEM_SEPARATOR name(L"Viewport");
-FILTER_ITEM_TRACK sample_limit(L"Sampling::Viewport::Sample Limit", 128.0, 1.0, 4096.0, 1.0);
+FILTER_ITEM_TRACK sample_limit(L"Sampling::Viewport::Sample Limit", 128.0, 2.0, 4096.0, 1.0);
 }  // namespace viewport
 namespace render {
 FILTER_ITEM_SEPARATOR name(L"Render");
-FILTER_ITEM_TRACK sample_limit(L"Sampling::Render::Sample Limit", 512.0, 1.0, 4096.0, 1.0);
+FILTER_ITEM_TRACK sample_limit(L"Sampling::Render::Sample Limit", 512.0, 2.0, 4096.0, 1.0);
 }  // namespace render
 }  // namespace sampling
 namespace compositing {
 FILTER_ITEM_GROUP name(L"Compositing", false);
-FILTER_ITEM_TRACK mix(L"Compositing::Mix", 100.0, 0.0, 100.0, 0.01);
+FILTER_ITEM_TRACK falloff(L"Compositing::Falloff", 0.0, 0.0, 100.0, 0.01);
 }  // namespace compositing
 FILTER_ITEM_GROUP additional_options(L"Additional Options", false);
 namespace extrapolation {
@@ -425,18 +427,24 @@ cache::Store store{};
     };
 }
 
-[[nodiscard]] Object ResolveObject(float amount, const FILTER_PROC_VIDEO* ctx) {
+[[nodiscard]] Object ResolveObject(const FILTER_PROC_VIDEO* ctx) {
+    namespace props = properties;
+
+    const float angle = static_cast<float>(props::shutter::angle.value);
+    const float amount = std::max(angle / 360.0f, 0.0f);
+    const float offset = static_cast<float>(props::shutter::phase.value) / angle;
+
     Object object;
     auto& state = object.state;
 
     store.Set(ctx);
 
-    state.current = GetObjectTransforms(0, ctx);
+    state.start = GetObjectTransforms(0, ctx);
 
     if (ctx->object->frame == 0) {
-        state.previous = Extrapolate(state.current, ctx);
+        state.end = Extrapolate(state.start, ctx);
     } else {
-        state.previous = GetObjectTransforms(-1, ctx);
+        state.end = GetObjectTransforms(-1, ctx);
     }
 
     object.dimensions = Eigen::Vector2i(ctx->object->width, ctx->object->height).cast<float>();
@@ -444,40 +452,66 @@ cache::Store store{};
     {
         const Eigen::Vector2f center = object.dimensions * 0.5f;
 
-        state.current.pivot += center;
-        state.previous.pivot += center;
+        state.start.pivot += center;
+        state.end.pivot += center;
     }
 
-    if (state.current.transforms.size() == state.previous.transforms.size()) {
-        state.depth = state.current.transforms.size();
+    if (state.start.transforms.size() == state.end.transforms.size()) {
+        state.depth = state.start.transforms.size();
     } else {
-        const auto n = std::ssize(state.current.transforms) - std::ssize(state.previous.transforms);
+        const auto n = std::ssize(state.start.transforms) - std::ssize(state.end.transforms);
 
         if (n > 0ll) {
-            state.previous.transforms.insert(state.previous.transforms.begin(), n, Object::Transform{});
+            state.end.transforms.insert(state.end.transforms.begin(), n, Object::Transform{});
         } else {
-            state.current.transforms.insert(state.current.transforms.begin(), -n, Object::Transform{});
+            state.start.transforms.insert(state.start.transforms.begin(), -n, Object::Transform{});
         }
 
-        state.depth = state.current.transforms.size();
+        state.depth = state.start.transforms.size();
     }
 
-    state.previous.pivot = lerp(state.current.pivot, state.previous.pivot, amount);
+    const auto apply_offset = [offset](Eigen::Vector2f& start, Eigen::Vector2f& end) {
+        const Eigen::Vector2f delta = (end - start) * offset;
+        start += delta;
+        end += delta;
+    };
+
+    const auto pivot = Eigen::Translation2f(-state.start.pivot);
+
+    state.end.pivot = lerp(state.start.pivot, state.end.pivot, amount);
+    apply_offset(state.start.pivot, state.end.pivot);
 
     for (size_t i = 0uz; i < state.depth; ++i) {
-        const auto& curr = state.current.transforms[i];
-        auto& prev = state.previous.transforms[i];
+        auto& start = state.start.transforms[i];
+        auto& end = state.end.transforms[i];
 
-        prev.position = lerp(curr.position, prev.position, amount);
-        prev.scale = lerp(curr.scale.cwiseInverse(), prev.scale.cwiseInverse(), amount).cwiseInverse();
-        prev.rotation = std::lerp(curr.rotation, prev.rotation, amount);
+        object.transform = object.transform * Eigen::Translation2f(start.position) *
+                           Eigen::Rotation2Df(start.rotation) * Eigen::Scaling(start.scale);
 
-        state.current.world_transform = state.current.world_transform * Eigen::Translation2f(curr.position) *
-                                        Eigen::Rotation2Df(curr.rotation) * Eigen::Scaling(curr.scale);
+        end.position = lerp(start.position, end.position, amount);
+        end.scale = lerp(start.scale.cwiseInverse(), end.scale.cwiseInverse(), amount).cwiseInverse();
+        end.rotation = std::lerp(start.rotation, end.rotation, amount);
 
-        state.previous.world_transform = state.previous.world_transform * Eigen::Translation2f(prev.position) *
-                                         Eigen::Rotation2Df(prev.rotation) * Eigen::Scaling(prev.scale);
+        apply_offset(start.position, end.position);
+        apply_offset(start.scale, end.scale);
+
+        start.scale = start.scale.cwiseMax(kEpsilon);
+        end.scale = end.scale.cwiseMax(kEpsilon);
+
+        {
+            const float delta = (end.rotation - start.rotation) * offset;
+            start.rotation += delta;
+            end.rotation += delta;
+        }
+
+        state.start.world_transform = state.start.world_transform * Eigen::Translation2f(start.position) *
+                                      Eigen::Rotation2Df(start.rotation) * Eigen::Scaling(start.scale);
+
+        state.end.world_transform = state.end.world_transform * Eigen::Translation2f(end.position) *
+                                    Eigen::Rotation2Df(end.rotation) * Eigen::Scaling(end.scale);
     }
+
+    object.transform = object.transform * pivot;
 
     return object;
 }
@@ -485,15 +519,15 @@ cache::Store store{};
 [[nodiscard]] int ComputeSamples(const Object& object) {
     const auto& state = object.state;
 
-    const auto curr_to_prev = state.previous.world_transform.inverse() * state.current.world_transform;
+    const auto start_to_end = state.end.world_transform.inverse() * state.start.world_transform;
     float max = 0.0f;
 
     for (int i = 0; i < 4; ++i) {
         const Eigen::Vector2f corner((i & 1) != 0 ? object.dimensions.x() : 0.0f,
                                      (i & 2) != 0 ? object.dimensions.y() : 0.0f);
-        const Eigen::Vector2f prev = curr_to_prev * (corner - state.current.pivot) + state.previous.pivot;
+        const Eigen::Vector2f end = start_to_end * (corner - state.start.pivot) + state.end.pivot;
 
-        max = std::max(max, (prev - corner).norm());
+        max = std::max(max, (end - corner).norm());
     }
 
     return static_cast<int>(max + 1.0f);
@@ -503,30 +537,30 @@ cache::Store store{};
     const auto& state = object.state;
 
     const float step = 1.0f / static_cast<float>(samples);
-    const auto curr_to_world = state.current.world_transform.inverse();
+    const auto base_to_world = object.transform.inverse();
 
     Eigen::AlignedBox2f box(Eigen::Vector2f::Zero(), object.dimensions);
 
     for (int i = 0; i <= samples; ++i) {
         const auto t = step * static_cast<float>(i);
 
-        Eigen::Affine2f curr_to_prev = curr_to_world;
+        Eigen::Affine2f sample_to_base = base_to_world;
 
         for (size_t j = 0; j < state.depth; ++j) {
-            const auto& curr = state.current.transforms[j];
-            const auto& prev = state.previous.transforms[j];
+            const auto& start = state.start.transforms[j];
+            const auto& end = state.end.transforms[j];
 
-            const auto translation = Eigen::Translation2f(lerp(curr.position, prev.position, t));
-            const Eigen::Vector2f scale = lerp(curr.scale.cwiseInverse(), prev.scale.cwiseInverse(), t).cwiseInverse();
-            const auto rotation = Eigen::Rotation2Df(std::lerp(curr.rotation, prev.rotation, t));
+            const auto translation = Eigen::Translation2f(lerp(start.position, end.position, t));
+            const Eigen::Vector2f scale = lerp(start.scale.cwiseInverse(), end.scale.cwiseInverse(), t).cwiseInverse();
+            const auto rotation = Eigen::Rotation2Df(std::lerp(start.rotation, end.rotation, t));
 
-            curr_to_prev = curr_to_prev * translation * rotation * Eigen::Scaling(scale);
+            sample_to_base = sample_to_base * translation * rotation * Eigen::Scaling(scale);
         }
 
-        const Eigen::Vector2f pivot = lerp(object.state.current.pivot, object.state.previous.pivot, t);
+        const Eigen::Vector2f pivot = lerp(object.state.start.pivot, object.state.end.pivot, t);
 
-        const Eigen::Vector2f origin = curr_to_prev * -pivot + object.state.current.pivot;
-        const auto linear = curr_to_prev.linear();
+        const Eigen::Vector2f origin = sample_to_base * -pivot;
+        const auto linear = sample_to_base.linear();
 
         box.extend(origin + linear.cwiseMin(0.0f) * object.dimensions);
         box.extend(origin + linear.cwiseMax(0.0f) * object.dimensions);
@@ -535,34 +569,32 @@ cache::Store store{};
     return box;
 }
 
-void CreateSubFrameTransforms(const Object& object, int samples, std::vector<d3d::Renderer::AffineMatrix>& xforms) {
-    samples -= 1;
-
+void CreateSubFrameTransforms(const Object& object, int samples, std::vector<d3d::Renderer::Affine2D>& xforms) {
     const auto& state = object.state;
 
-    const float step = 1.0f / static_cast<float>(samples);
+    const float step = 1.0f / static_cast<float>(samples - 1);
     xforms.resize(samples);
 
-    for (int i = 1; i <= samples; ++i) {
+    for (int i = 0; i < samples; ++i) {
         const float t = step * static_cast<float>(i);
-        Eigen::Affine2f prev_to_world = Eigen::Affine2f::Identity();
+        Eigen::Affine2f sample_transform = Eigen::Affine2f::Identity();
 
         for (size_t j = 0uz; j < state.depth; ++j) {
-            const auto& curr = state.current.transforms[j];
-            const auto& prev = state.previous.transforms[j];
+            const auto& start = state.start.transforms[j];
+            const auto& end = state.end.transforms[j];
 
-            const auto translation = Eigen::Translation2f(-lerp(curr.position, prev.position, t));
-            const auto scale = lerp(curr.scale.cwiseInverse(), prev.scale.cwiseInverse(), t);
-            const auto rotation = Eigen::Rotation2Df(-std::lerp(curr.rotation, prev.rotation, t));
+            const auto translation = Eigen::Translation2f(-lerp(start.position, end.position, t));
+            const auto scale = lerp(start.scale.cwiseInverse(), end.scale.cwiseInverse(), t);
+            const auto rotation = Eigen::Rotation2Df(-std::lerp(start.rotation, end.rotation, t));
 
-            prev_to_world = Eigen::Scaling(scale) * rotation * translation * prev_to_world;
+            sample_transform = Eigen::Scaling(scale) * rotation * translation * sample_transform;
         }
 
-        prev_to_world = Eigen::Translation2f(lerp(state.current.pivot, state.previous.pivot, t)) * prev_to_world;
+        sample_transform = Eigen::Translation2f(lerp(state.start.pivot, state.end.pivot, t)) * sample_transform;
 
-        xforms[i - 1] = {
-            .row0 = {prev_to_world(0, 0), prev_to_world(0, 1), prev_to_world(0, 2)},
-            .row1 = {prev_to_world(1, 0), prev_to_world(1, 1), prev_to_world(1, 2)},
+        xforms[i] = {
+            .row0 = {sample_transform(0, 0), sample_transform(0, 1), sample_transform(0, 2)},
+            .row1 = {sample_transform(1, 0), sample_transform(1, 1), sample_transform(1, 2)},
         };
     }
 }
@@ -574,13 +606,11 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         return false;
     }
 
-    const auto amount = std::clamp(static_cast<float>(props::shutter::angle.value) / 360.0f, 0.0f, 1.0f);
-
-    if (amount < kEpsilon || (ctx->object->frame == 0 && props::extrapolation::value == 0)) {
+    if (props::shutter::angle.value < kEpsilon || (ctx->object->frame == 0 && props::extrapolation::value == 0)) {
         return true;
     }
 
-    const auto object = ResolveObject(amount, ctx);
+    const auto object = ResolveObject(ctx);
 
     const int required_samples = ComputeSamples(object);
 
@@ -592,7 +622,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                           ? static_cast<int>(props::sampling::render::sample_limit.value)
                           : static_cast<int>(props::sampling::viewport::sample_limit.value);
 
-    const int samples = std::min(limit, required_samples);
+    int samples = std::min(limit, required_samples);
 
     if (samples < 2) {
         return true;
@@ -613,7 +643,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             size = object.dimensions;
         }
 
-        if (!ctx->copy_image_resource(L"resource:src", nullptr)) {
+        if (!ctx->copy_image_resource(L"resource:source", nullptr)) {
             aul::Logger::Error(L"Failed to copy image resource");
             return false;
         }
@@ -625,7 +655,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             return false;
         }
 
-        auto* const src = ctx->get_image_resource_texture2d(L"resource:src");
+        auto* const src = ctx->get_image_resource_texture2d(L"resource:source");
         auto* const dst = ctx->get_image_texture2d();
 
         if (src == nullptr || dst == nullptr) {
@@ -633,48 +663,52 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             return false;
         }
 
-        thread_local std::vector<d3d::Renderer::AffineMatrix> subframe_xforms;
+        thread_local std::vector<d3d::Renderer::Affine2D> subframe_xforms;
         CreateSubFrameTransforms(object, samples, subframe_xforms);
 
-        const float mix = std::clamp(static_cast<float>(properties::compositing::mix.value) * 0.02f, 0.0f, 2.0f);
+        const float falloff = std::clamp(static_cast<float>(props::compositing::falloff.value) * 0.01f, 0.0f, 1.0f);
+        float amp = 1.0f;
+
+        if (falloff < 1.0f - kEpsilon) {
+            amp = 1.0f / std::pow(1.0f - falloff, 1.0f / static_cast<float>(samples - 1));
+        } else {
+            samples = 1;
+        }
 
         const d3d::Renderer::Param param{
-            .base_transform =
+            .transform =
                 {
                     .row0 =
                         {
-                            object.state.current.world_transform(0, 0),
-                            object.state.current.world_transform(0, 1),
-                            object.state.current.world_transform(0, 2),
+                            object.transform(0, 0),
+                            object.transform(0, 1),
+                            object.transform(0, 2),
                         },
                     .row1 =
                         {
-                            object.state.current.world_transform(1, 0),
-                            object.state.current.world_transform(1, 1),
-                            object.state.current.world_transform(1, 2),
+                            object.transform(1, 0),
+                            object.transform(1, 1),
+                            object.transform(1, 2),
                         },
-                },
-            .pivot =
-                {
-                    object.state.current.pivot.x(),
-                    object.state.current.pivot.y(),
                 },
             .origin =
                 {
                     origin.x(),
                     origin.y(),
                 },
-            .amount = amount,
-            .samples = samples,
-            .mix =
+            .texel =
                 {
-                    std::min(2.0f - mix, 1.0f),
-                    std::min(mix, 1.0f),
+                    1.0f / object.dimensions.x(),
+                    1.0f / object.dimensions.y(),
                 },
+            .samples = samples,
+            .falloff = falloff,
+            .amp = amp,
         };
 
-        const auto result = renderer.Render(
-            dst, [&param, src](d3d::Renderer::Context& ctx) { return ctx.Draw(src, subframe_xforms, param); });
+        const auto result = renderer.Render(dst, [&param, src](d3d::Renderer::Context& ctx) -> d3d::Renderer::Result {
+            return ctx.Draw(src, subframe_xforms, param);
+        });
 
         if (!result.has_value()) {
             aul::Logger::Error(result.error());
@@ -698,13 +732,14 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 constinit void* props[] = {
     &properties::shutter::name,
     &properties::shutter::angle,
+    &properties::shutter::phase,
     &properties::sampling::name,
     &properties::sampling::viewport::name,
     &properties::sampling::viewport::sample_limit,
     &properties::sampling::render::name,
     &properties::sampling::render::sample_limit,
     &properties::compositing::name,
-    &properties::compositing::mix,
+    &properties::compositing::falloff,
     &properties::additional_options,
     &properties::extrapolation::control,
     &properties::should_resize,

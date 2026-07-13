@@ -105,14 +105,16 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
         if (const int d = ctx->object->frame - *prev.frame; d != 0 && d != 1) {
             const float t = 1.0f / static_cast<float>(d);
 
-            const auto lerp = [&](const Eigen::Vector2f& a, const Eigen::Vector2f& b) { return a + (b - a) * t; };
+            const auto lerp = [t](const Eigen::Vector2f& a, const Eigen::Vector2f& b) -> Eigen::Vector2f {
+                return a + (b - a) * t;
+            };
 
             prev.transform.pivot = lerp(curr.transform.pivot, prev.transform.pivot);
             prev.transform.position = lerp(curr.transform.position, prev.transform.position);
             prev.transform.scale = lerp(curr.transform.scale, prev.transform.scale).cwiseMax(kEpsilon);
             prev.transform.rotation = std::lerp(curr.transform.rotation, prev.transform.rotation, t);
 
-            if (d < 0) {
+            if (ctx->object->frame != 0 && d < 0) {
                 aul::Logger::Warning(L"Reverse playback is not supported");
             }
         }

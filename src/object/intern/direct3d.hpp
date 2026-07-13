@@ -14,7 +14,7 @@
 namespace blur::object::direct3d {
 class Renderer {
   public:
-    struct AffineMatrix {
+    struct Affine2D {
         float row0[3] = {1.0f, 0.0f, 0.0f};
         float row1[3] = {0.0f, 1.0f, 0.0f};
     };
@@ -25,12 +25,13 @@ class Renderer {
             float padding0 = 0.0f;
             float row1[3] = {0.0f, 1.0f, 0.0f};
             float padding1 = 0.0f;
-        } base_transform;
-        float pivot[2] = {0.0f, 0.0f};
+        } transform;
         float origin[2] = {0.0f, 0.0f};
-        float amount = 0.0f;
+        float texel[2] = {1.0f, 1.0f};
         int32_t samples = 1;
-        float mix[2] = {0.0f, 0.0f};
+        int32_t blend_mode = 0;
+        float falloff = 0.0f;
+        float amp = 1.0f;
     };
 
     using Result = std::expected<void, std::wstring>;
@@ -42,7 +43,7 @@ class Renderer {
         Context(Context&&) = delete;
         Context& operator=(Context&&) = delete;
 
-        [[nodiscard]] Result Draw(ID3D11Texture2D* src, const std::vector<AffineMatrix>& subframe_xforms,
+        [[nodiscard]] Result Draw(ID3D11Texture2D* src, const std::vector<Affine2D>& subframe_xforms,
                                   const Param& param) const;
 
       private:
