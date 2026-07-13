@@ -60,13 +60,10 @@ struct Box {
 };
 
 namespace properties {
-FILTER_ITEM_TRACK shutter_angle(L"Shutter Angle", 180.0, 0.0, 360.0, 0.01);
-namespace extrapolation {
-FILTER_ITEM_SELECT::ITEM contents[] = {{L"None", 0}, {L"Linear", 1}, {L"Quadratic", 2}, {nullptr, -1}};
-FILTER_ITEM_SELECT control(L"Extrapolation", 2, contents);
-auto& value = control.value;
-}  // namespace extrapolation
-FILTER_ITEM_CHECK should_resize(L"Resize", true);
+namespace shutter {
+FILTER_ITEM_GROUP name(L"Shutter", true);
+FILTER_ITEM_TRACK angle(L"Shutter::Angle", 180.0, 0.0, 360.0, 0.01);
+}  // namespace shutter
 namespace sampling {
 FILTER_ITEM_GROUP name(L"Sampling", false);
 namespace viewport {
@@ -83,6 +80,12 @@ FILTER_ITEM_GROUP name(L"Compositing", false);
 FILTER_ITEM_TRACK mix(L"Compositing::Mix", 100.0, 0.0, 100.0, 0.01);
 }  // namespace compositing
 FILTER_ITEM_GROUP additional_options(L"Additional Options", false);
+namespace extrapolation {
+FILTER_ITEM_SELECT::ITEM contents[] = {{L"None", 0}, {L"Linear", 1}, {L"Quadratic", 2}, {nullptr, -1}};
+FILTER_ITEM_SELECT control(L"Extrapolation", 2, contents);
+auto& value = control.value;
+}  // namespace extrapolation
+FILTER_ITEM_CHECK should_resize(L"Resize", true);
 FILTER_ITEM_CHECK should_print_diagnostics(L"Diagnostics", false);
 namespace internal {
 struct Record {
@@ -101,7 +104,7 @@ FILTER_ITEM_DATA<std::array<Record, 8uz>> records5(L"Internal::Records[5]");
 FILTER_ITEM_DATA<std::array<Record, 8uz>> records6(L"Internal::Records[6]");
 FILTER_ITEM_DATA<std::array<Record, 8uz>> records7(L"Internal::Records[7]");
 
-std::array<FILTER_ITEM_DATA<std::array<Record, 8uz>>*, 8uz> records = {
+constexpr std::array<FILTER_ITEM_DATA<std::array<Record, 8uz>>*, 8uz> kRecords = {
     &records0, &records1, &records2, &records3, &records4, &records5, &records6, &records7,
 };
 }  // namespace internal
@@ -354,7 +357,7 @@ cache::Store store{};
     if (ctx->object->index >= 0 && ctx->object->index < ctx->object->num && ctx->object->index < 64) {
         const auto r = std::div(ctx->object->index, 8);
 
-        auto& record = (*props::internal::records[r.quot]->value)[r.rem];
+        auto& record = (*props::internal::kRecords[r.quot]->value)[r.rem];
 
         if (record.num == ctx->object->num) {
             store.Set(ctx->object, record.transforms);
@@ -571,7 +574,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         return false;
     }
 
-    const auto amount = std::clamp(static_cast<float>(props::shutter_angle.value) / 360.0f, 0.0f, 1.0f);
+    const auto amount = std::clamp(static_cast<float>(props::shutter::angle.value) / 360.0f, 0.0f, 1.0f);
 
     if (amount < kEpsilon || (ctx->object->frame == 0 && props::extrapolation::value == 0)) {
         return true;
@@ -693,9 +696,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 }
 
 constinit void* props[] = {
-    &properties::shutter_angle,
-    &properties::extrapolation::control,
-    &properties::should_resize,
+    &properties::shutter::name,
+    &properties::shutter::angle,
     &properties::sampling::name,
     &properties::sampling::viewport::name,
     &properties::sampling::viewport::sample_limit,
@@ -704,6 +706,8 @@ constinit void* props[] = {
     &properties::compositing::name,
     &properties::compositing::mix,
     &properties::additional_options,
+    &properties::extrapolation::control,
+    &properties::should_resize,
     &properties::should_print_diagnostics,
     &properties::internal::records0,
     &properties::internal::records1,
