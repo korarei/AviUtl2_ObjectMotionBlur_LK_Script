@@ -55,11 +55,6 @@ struct Object {
     State state{};
 };
 
-struct Box {
-    Eigen::AlignedBox2f min;
-    Eigen::AlignedBox2f max;
-};
-
 namespace properties {
 namespace shutter {
 FILTER_ITEM_GROUP name(L"Shutter", true);
@@ -578,7 +573,7 @@ void CreateSubFrameTransforms(const Object& object, int samples, std::vector<d3d
 
     for (int i = 0; i < samples; ++i) {
         const float t = step * static_cast<float>(i);
-        Eigen::Affine2f sample_transform = Eigen::Affine2f::Identity();
+        Eigen::Affine2f subframe_xform = Eigen::Affine2f::Identity();
 
         for (size_t j = 0uz; j < state.depth; ++j) {
             const auto& start = state.start.transforms[j];
@@ -588,14 +583,14 @@ void CreateSubFrameTransforms(const Object& object, int samples, std::vector<d3d
             const auto scale = lerp(start.scale.cwiseInverse(), end.scale.cwiseInverse(), t);
             const auto rotation = Eigen::Rotation2Df(-std::lerp(start.rotation, end.rotation, t));
 
-            sample_transform = Eigen::Scaling(scale) * rotation * translation * sample_transform;
+            subframe_xform = Eigen::Scaling(scale) * rotation * translation * subframe_xform;
         }
 
-        sample_transform = Eigen::Translation2f(lerp(state.start.pivot, state.end.pivot, t)) * sample_transform;
+        subframe_xform = Eigen::Translation2f(lerp(state.start.pivot, state.end.pivot, t)) * subframe_xform;
 
         xforms[i] = {
-            .row0 = {sample_transform(0, 0), sample_transform(0, 1), sample_transform(0, 2)},
-            .row1 = {sample_transform(1, 0), sample_transform(1, 1), sample_transform(1, 2)},
+            .row0 = {subframe_xform(0, 0), subframe_xform(0, 1), subframe_xform(0, 2)},
+            .row1 = {subframe_xform(1, 0), subframe_xform(1, 1), subframe_xform(1, 2)},
         };
     }
 }
