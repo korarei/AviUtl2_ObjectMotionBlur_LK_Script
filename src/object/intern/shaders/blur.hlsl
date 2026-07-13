@@ -10,10 +10,9 @@ cbuffer params : register(b0) {
     Affine2D transform;
     float2 origin;
     float2 texel;
+    float2 mix;
+    float decay;
     int samples;
-    int blend_mode;
-    float falloff;
-    float amp;
 }
 
 inline float4 Sample(float2 pos) {
@@ -24,20 +23,18 @@ float4 main(float4 pos : SV_Position) : SV_Target {
     pos.xyz = float3(pos.xy + origin, 1.0);
     pos.xy = float2(dot(transform.row0, pos.xyz), dot(transform.row1, pos.xyz));
 
-    Affine2D xform = subframe_transforms[samples - 1];
-    float weight = 1.0 - falloff;
+    Affine2D xform = subframe_transforms[0];
+    float weight = 1.0;
     float norm = weight;
-    float4 blended = Sample(float2(dot(xform.row0, pos.xyz), dot(xform.row1, pos.xyz)));
+    float4 wet = Sample(float2(dot(xform.row0, pos.xyz), dot(xform.row1, pos.xyz)));
+    const float4 dry = wet * mix.x;
 
-    switch (blend_mode) {
-        default:
-            for (int i = 1; i < samples; ++i) {
-                xform = subframe_transforms[samples - 1 - i];
-                weight *= amp;
-                blended += Sample(float2(dot(xform.row0, pos.xyz), dot(xform.row1, pos.xyz))) * weight;
-                norm += weight;
-            }
-
-            return blended *= rcp(norm);
+    for (int i = 1; i < samples; ++i) {
+        xform = subframe_transforms[i];
+        weight *= decay;
+        wet += Sample(float2(dot(xform.row0, pos.xyz), dot(xform.row1, pos.xyz))) * weight;
+        norm += weight;
     }
+
+    return mad(1.0 - dry.a, wet * rcp(norm) * mix.y, dry);
 }

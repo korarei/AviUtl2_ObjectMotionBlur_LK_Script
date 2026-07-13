@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdint>  // IWYU pragma: keep
+#include <cstdint>
 #include <format>
 #include <numbers>
 #include <optional>
@@ -79,6 +79,7 @@ FILTER_ITEM_TRACK sample_limit(L"Sampling::Render::Sample Limit", 512.0, 2.0, 40
 }  // namespace sampling
 namespace compositing {
 FILTER_ITEM_GROUP name(L"Compositing", false);
+FILTER_ITEM_TRACK mix(L"Compositing::Mix", 100.0, 0.0, 100.0, 0.01);
 FILTER_ITEM_TRACK falloff(L"Compositing::Falloff", 0.0, 0.0, 100.0, 0.01);
 }  // namespace compositing
 FILTER_ITEM_GROUP additional_options(L"Additional Options", false);
@@ -618,11 +619,11 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         return true;
     }
 
-    const int limit = aul::Context::CurrentSessionState() == aul::Context::SessionState::kRendering
-                          ? static_cast<int>(props::sampling::render::sample_limit.value)
-                          : static_cast<int>(props::sampling::viewport::sample_limit.value);
+    const int32_t limit = aul::Context::CurrentSessionState() == aul::Context::SessionState::kRendering
+                              ? static_cast<int32_t>(props::sampling::render::sample_limit.value)
+                              : static_cast<int32_t>(props::sampling::viewport::sample_limit.value);
 
-    int samples = std::min(limit, required_samples);
+    const int32_t samples = std::min(limit, required_samples);
 
     if (samples < 2) {
         return true;
@@ -666,14 +667,9 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         thread_local std::vector<d3d::Renderer::Affine2D> subframe_xforms;
         CreateSubFrameTransforms(object, samples, subframe_xforms);
 
-        const float falloff = std::clamp(static_cast<float>(props::compositing::falloff.value) * 0.01f, 0.0f, 1.0f);
-        float amp = 1.0f;
-
-        if (falloff < 1.0f - kEpsilon) {
-            amp = 1.0f / std::pow(1.0f - falloff, 1.0f / static_cast<float>(samples - 1));
-        } else {
-            samples = 1;
-        }
+        const float mix = std::clamp(static_cast<float>(props::compositing::mix.value) * 0.01f, 0.0f, 1.0f) * 2.0f;
+        const float falloff = std::clamp(static_cast<float>(props::compositing::falloff.value) * 0.01f, 0.0f, 0.99999f);
+        const float decay = std::pow(1.0f - falloff, 1.0f / static_cast<float>(samples - 1));
 
         const d3d::Renderer::Param param{
             .transform =
@@ -701,9 +697,13 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                     1.0f / object.dimensions.x(),
                     1.0f / object.dimensions.y(),
                 },
+            .mix =
+                {
+                    std::min(2.0f - mix, 1.0f),
+                    std::min(mix, 1.0f),
+                },
+            .decay = decay,
             .samples = samples,
-            .falloff = falloff,
-            .amp = amp,
         };
 
         const auto result = renderer.Render(dst, [&param, src](d3d::Renderer::Context& ctx) -> d3d::Renderer::Result {
@@ -716,7 +716,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         }
     }
 
-    if (properties::should_print_diagnostics.value) {
+    if (props::should_print_diagnostics.value) {
         aul::Logger::Log(
             std::format(L"\n"
                         L"Effect ID       : {}\n"
@@ -739,6 +739,7 @@ constinit void* props[] = {
     &properties::sampling::render::name,
     &properties::sampling::render::sample_limit,
     &properties::compositing::name,
+    &properties::compositing::mix,
     &properties::compositing::falloff,
     &properties::additional_options,
     &properties::extrapolation::control,

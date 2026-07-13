@@ -28,10 +28,9 @@ class Renderer {
         } transform;
         float origin[2] = {0.0f, 0.0f};
         float texel[2] = {1.0f, 1.0f};
+        float mix[2] = {0.0f, 1.0f};
+        float decay = 1.0f;
         int32_t samples = 1;
-        int32_t blend_mode = 0;
-        float falloff = 0.0f;
-        float amp = 1.0f;
     };
 
     using Result = std::expected<void, std::wstring>;
