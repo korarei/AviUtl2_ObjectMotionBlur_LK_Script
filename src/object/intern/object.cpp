@@ -663,8 +663,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         CreateSubFrameTransforms(object, samples, subframe_xforms);
 
         const float mix = std::clamp(static_cast<float>(props::compositing::mix.value) * 0.01f, 0.0f, 1.0f) * 2.0f;
-        const float falloff = std::clamp(static_cast<float>(props::compositing::falloff.value) * 0.01f, 0.0f, 0.99999f);
-        const float decay = std::pow(1.0f - falloff, 1.0f / static_cast<float>(samples - 1));
+        const float falloff = std::max(static_cast<float>(props::compositing::falloff.value) * 0.01f, 0.0f);
+        const float decay = std::pow(std::max(1.0f - falloff, kEpsilon), 1.0f / static_cast<float>(samples - 1));
 
         const d3d::Renderer::Param param{
             .transform =
