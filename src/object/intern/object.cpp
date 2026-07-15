@@ -278,51 +278,17 @@ cache::Store store{};
 }
 
 [[nodiscard]] float ExtrapolateScalarLinear(std::span<const float> values) {
-    const int rows = static_cast<int>(values.size());
-
-    Eigen::Matrix<float, 5, 2> a;
-    Eigen::Vector<float, 5> b;
-
-    for (int row = 0; row < rows; ++row) {
-        const float t = static_cast<float>(row);
-        const float w = std::sqrt(std::exp(-t));
-        float x = 1.0f;
-
-        for (int col = 0; col < 2; ++col) {
-            a(row, col) = x * w;
-            x *= t;
-        }
-
-        b[row] = values[row] * w;
-    }
-
-    const Eigen::Vector2f fs = a.topRows(rows).colPivHouseholderQr().solve(b.head(rows));
-
-    return fs[0ll] - fs[1ll];
+    return values[0uz] - (values[1uz] - values[0uz]);
 }
 
 [[nodiscard]] float ExtrapolateScalarQuadratic(std::span<const float> values) {
-    const int rows = static_cast<int>(values.size());
+    const float delta0 = values[1uz] - values[0uz];
+    const float delta1 = values[2uz] - values[1uz];
+    const float slope = (3.0f * delta0 - delta1) * 0.5f;
+    const float limit = 3.0f * delta0;
+    const float clamped_slope = std::clamp(slope, std::min(0.0f, limit), std::max(0.0f, limit));
 
-    Eigen::Matrix<float, 5, 3> a;
-    Eigen::Vector<float, 5> b;
-
-    for (int row = 0; row < rows; ++row) {
-        const float t = static_cast<float>(row);
-        const float w = std::sqrt(std::exp(-t));
-        float x = 1.0f;
-
-        for (int col = 0; col < 3; ++col) {
-            a(row, col) = x * w;
-            x *= t;
-        }
-
-        b[row] = values[row] * w;
-    }
-
-    const Eigen::Vector3f fs = a.topRows(rows).colPivHouseholderQr().solve(b.head(rows));
-
-    return fs[0ll] - fs[1ll] + fs[2ll];
+    return values[0uz] - clamped_slope;
 }
 
 [[nodiscard]] float ExtrapolateScalar(std::span<const float> values, int degree) {
@@ -367,7 +333,7 @@ cache::Store store{};
     }
 
     const int degree = props::extrapolation::value;
-    const size_t samples = static_cast<size_t>(degree) + 3uz;
+    const size_t samples = static_cast<size_t>(degree) + 1uz;
     std::array<std::optional<Object::Snapshot>, 5uz> snapshots{};
     snapshots[0uz].emplace(zero);
 
