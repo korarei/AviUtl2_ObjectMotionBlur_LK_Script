@@ -6,8 +6,6 @@
 #include <cstdint>
 #include <format>
 #include <numbers>
-#include <optional>
-#include <span>
 #include <vector>
 
 #include <Eigen/Geometry>
@@ -87,22 +85,22 @@ FILTER_ITEM_CHECK should_resize(L"Resize", true);
 FILTER_ITEM_CHECK should_print_diagnostics(L"Diagnostics", false);
 namespace internal {
 struct Record {
-    std::array<cache::Store::Transform, 4uz> transforms{};
+    std::array<cache::Store::Transform, 2uz> transforms{};
     int num = 0;
 };
 
-static_assert(sizeof(std::array<Record, 8uz>) <= 1024uz);
+static_assert(sizeof(std::array<Record, 16uz>) <= 1024uz);
 
-FILTER_ITEM_DATA<std::array<Record, 8uz>> records0(L"Internal::Records[0]");
-FILTER_ITEM_DATA<std::array<Record, 8uz>> records1(L"Internal::Records[1]");
-FILTER_ITEM_DATA<std::array<Record, 8uz>> records2(L"Internal::Records[2]");
-FILTER_ITEM_DATA<std::array<Record, 8uz>> records3(L"Internal::Records[3]");
-FILTER_ITEM_DATA<std::array<Record, 8uz>> records4(L"Internal::Records[4]");
-FILTER_ITEM_DATA<std::array<Record, 8uz>> records5(L"Internal::Records[5]");
-FILTER_ITEM_DATA<std::array<Record, 8uz>> records6(L"Internal::Records[6]");
-FILTER_ITEM_DATA<std::array<Record, 8uz>> records7(L"Internal::Records[7]");
+FILTER_ITEM_DATA<std::array<Record, 16uz>> records0(L"Internal::Records[0]");
+FILTER_ITEM_DATA<std::array<Record, 16uz>> records1(L"Internal::Records[1]");
+FILTER_ITEM_DATA<std::array<Record, 16uz>> records2(L"Internal::Records[2]");
+FILTER_ITEM_DATA<std::array<Record, 16uz>> records3(L"Internal::Records[3]");
+FILTER_ITEM_DATA<std::array<Record, 16uz>> records4(L"Internal::Records[4]");
+FILTER_ITEM_DATA<std::array<Record, 16uz>> records5(L"Internal::Records[5]");
+FILTER_ITEM_DATA<std::array<Record, 16uz>> records6(L"Internal::Records[6]");
+FILTER_ITEM_DATA<std::array<Record, 16uz>> records7(L"Internal::Records[7]");
 
-constexpr std::array<FILTER_ITEM_DATA<std::array<Record, 8uz>>*, 8uz> kRecords = {
+constexpr std::array<FILTER_ITEM_DATA<std::array<Record, 16uz>>*, 8uz> kRecords = {
     &records0, &records1, &records2, &records3, &records4, &records5, &records6, &records7,
 };
 }  // namespace internal
@@ -191,12 +189,12 @@ cache::Store store{};
     return handles;
 }
 
-[[nodiscard]] std::vector<Object::Transform> GetEmpties(int offset, const FILTER_PROC_VIDEO* ctx) {
+[[nodiscard]] std::vector<Object::Transform> GetEmpties(int phase, const FILTER_PROC_VIDEO* ctx) {
     if (ctx->object->layer == 0) {
         return {};
     }
 
-    const int frame = ctx->object->frame_s + ctx->object->frame + offset;
+    const int frame = ctx->object->frame_s + ctx->object->frame + phase;
 
     if (frame < 0) {
         return {};
@@ -212,16 +210,16 @@ cache::Store store{};
         for (size_t i = 0; i < handles.size(); ++i) {
             auto* const handle = handles[handles.size() - 1uz - i];
 
-            Object::Transform transform{};
+            Object::Transform xform{};
 
             double v;
 
             if (ctx->edit->get_effect_track_value(handle, L"X", point, &v)) {
-                transform.position.x() = static_cast<float>(v);
+                xform.position.x() = static_cast<float>(v);
             }
 
             if (ctx->edit->get_effect_track_value(handle, L"Y", point, &v)) {
-                transform.position.y() = static_cast<float>(v);
+                xform.position.y() = static_cast<float>(v);
             }
 
             if (ctx->edit->get_effect_track_value(handle, L"拡大率", point, &v)) {
@@ -229,47 +227,47 @@ cache::Store store{};
                     aul::Logger::Warning(L"Negative scaling is not supported");
                 }
 
-                transform.scale = Eigen::Vector2f::Constant(std::max(static_cast<float>(v) * 0.01f, kEpsilon));
+                xform.scale = Eigen::Vector2f::Constant(std::max(static_cast<float>(v) * 0.01f, kEpsilon));
             }
 
             if (ctx->edit->get_effect_track_value(handle, L"Z軸回転", point, &v)) {
-                transform.rotation = ToRadians(static_cast<float>(v));
+                xform.rotation = ToRadians(static_cast<float>(v));
             }
 
-            empties[i] = std::move(transform);
+            empties[i] = std::move(xform);
         }
     }
 
     return empties;
 }
 
-[[nodiscard]] Object::Snapshot GetObjectTransforms(int offset, const FILTER_PROC_VIDEO* ctx) {
+[[nodiscard]] Object::Snapshot GetObjectTransforms(int phase, const FILTER_PROC_VIDEO* ctx) {
     Object::Snapshot snapshot{};
 
-    snapshot.transforms = GetEmpties(offset, ctx);
+    snapshot.transforms = GetEmpties(phase, ctx);
 
     snapshot.transforms.emplace_back();
-    auto& transform = snapshot.transforms.back();
+    auto& xform = snapshot.transforms.back();
 
     {
         const double spf = static_cast<double>(ctx->scene->scale) / ctx->scene->rate;
         OBJECT_IMAGE_PARAM base;
 
-        if (ctx->get_output_image_param(nullptr, offset * spf, &base, sizeof(base))) {
-            const auto& xform = store.Get(ctx->object, offset);
+        if (ctx->get_output_image_param(nullptr, phase * spf, &base, sizeof(base))) {
+            const auto& offset = store.Get(ctx->object, phase);
 
-            snapshot.pivot = Eigen::Map<const Eigen::Vector2f>(&base.cx) + xform.pivot;
-            transform.position = Eigen::Map<const Eigen::Vector2f>(&base.x) + xform.position;
-            transform.rotation = ToRadians(base.rz + xform.rotation);
+            snapshot.pivot = Eigen::Map<const Eigen::Vector2f>(&base.cx) + offset.pivot;
+            xform.position = Eigen::Map<const Eigen::Vector2f>(&base.x) + offset.position;
+            xform.rotation = ToRadians(base.rz + offset.rotation);
 
             {
-                Eigen::Vector2f scale(base.sx * xform.scale.x(), base.sy * xform.scale.y());
+                Eigen::Vector2f scale(base.sx * offset.scale.x(), base.sy * offset.scale.y());
 
                 if ((scale.array() < 0.0f).any()) {
                     aul::Logger::Warning(L"Negative scaling is not supported");
                 }
 
-                transform.scale = scale.cwiseMax(kEpsilon);
+                xform.scale = scale.cwiseMax(kEpsilon);
             }
         }
     }
@@ -277,49 +275,18 @@ cache::Store store{};
     return snapshot;
 }
 
-[[nodiscard]] float ExtrapolateScalarLinear(std::span<const float> values) {
-    return values[0uz] - (values[1uz] - values[0uz]);
-}
-
-[[nodiscard]] float ExtrapolateScalarQuadratic(std::span<const float> values) {
-    const float delta0 = values[1uz] - values[0uz];
-    const float delta1 = values[2uz] - values[1uz];
-    const float slope = (3.0f * delta0 - delta1) * 0.5f;
-    const float limit = 3.0f * delta0;
-    const float clamped_slope = std::clamp(slope, std::min(0.0f, limit), std::max(0.0f, limit));
-
-    return values[0uz] - clamped_slope;
-}
-
-[[nodiscard]] float ExtrapolateScalar(std::span<const float> values, int degree) {
-    return degree == 1 ? ExtrapolateScalarLinear(values) : ExtrapolateScalarQuadratic(values);
-}
-
-[[nodiscard]] Eigen::Vector2f ExtrapolateVector(std::span<const Eigen::Vector2f> values, int degree) {
-    std::array<float, 5uz> xs{};
-    std::array<float, 5uz> ys{};
-
-    for (size_t i = 0; i < values.size(); ++i) {
-        xs[i] = values[i].x();
-        ys[i] = values[i].y();
-    }
-
-    return {
-        ExtrapolateScalar(std::span(xs.data(), values.size()), degree),
-        ExtrapolateScalar(std::span(ys.data(), values.size()), degree),
-    };
-}
-
 // 0フレーム以外呼び出し禁止
 [[nodiscard]] Object::Snapshot Extrapolate(const Object::Snapshot& zero, const FILTER_PROC_VIDEO* ctx) {
     namespace props = properties;
+
+    static const Object::Transform identity{};
 
     if (props::extrapolation::value < 1 || props::extrapolation::value > 2) {
         return zero;
     }
 
-    if (ctx->object->index >= 0 && ctx->object->index < ctx->object->num && ctx->object->index < 64) {
-        const auto r = std::div(ctx->object->index, 8);
+    if (ctx->object->index >= 0 && ctx->object->index < ctx->object->num && ctx->object->index < 128) {
+        const auto r = std::div(ctx->object->index, 16);
 
         auto& record = (*props::internal::kRecords[r.quot]->value)[r.rem];
 
@@ -332,61 +299,64 @@ cache::Store store{};
         aul::Logger::Warning(L"Object index exceeds the cache limit");
     }
 
-    const int degree = props::extrapolation::value;
-    const size_t samples = static_cast<size_t>(degree) + 1uz;
-    std::array<std::optional<Object::Snapshot>, 5uz> snapshots{};
-    snapshots[0uz].emplace(zero);
+    const auto retrodict = [](auto&& value_at) {
+        const auto v0 = value_at(0uz);
+        const auto v1 = value_at(1uz);
+        const auto d0 = v1 - v0;
 
-    for (size_t i = 1; i < samples; ++i) {
-        snapshots[i].emplace(GetObjectTransforms(static_cast<int>(i), ctx));
+        if (props::extrapolation::value == 1) {
+            return (v0 - d0).eval();
+        }
+
+        const auto v2 = value_at(2uz);
+        const auto d1 = v2 - v1;
+
+        const auto velocity = ((3.0f * d0) - d1) * 0.5f;
+        const auto limit = 3.0f * d0;
+
+        return (v0 - velocity.cwiseMax(limit.cwiseMin(0.0f)).cwiseMin(limit.cwiseMax(0.0f))).eval();
+    };
+
+    const size_t samples = static_cast<size_t>(props::extrapolation::value) + 1uz;
+
+    std::array<Object::Snapshot, 3uz> snapshots{zero};
+
+    for (size_t i = 1uz; i < samples; ++i) {
+        snapshots[i] = GetObjectTransforms(static_cast<int>(i), ctx);
     }
-
-    const auto snapshot_at = [&](size_t i) -> const Object::Snapshot& { return *snapshots[i]; };
 
     size_t depth = 0uz;
 
     for (size_t i = 0uz; i < samples; ++i) {
-        depth = std::max(depth, snapshot_at(i).transforms.size());
+        depth = std::max(depth, snapshots[i].transforms.size());
     }
 
-    std::array<Eigen::Vector2f, 5uz> pivots{};
+    Object::Snapshot snapshot{};
 
-    for (size_t i = 0; i < samples; ++i) {
-        pivots[i] = snapshot_at(i).pivot;
-    }
-
-    std::vector<Object::Transform> transforms(depth);
-    std::array<Eigen::Vector2f, 5uz> positions{};
-    std::array<Eigen::Vector2f, 5uz> scales{};
-    std::array<float, 5uz> rotations{};
-
-    const Object::Transform identity{};
-    const auto transform_at = [&](size_t sample, size_t index) -> const Object::Transform& {
-        const auto& snapshot = snapshot_at(sample);
-        const size_t offset = depth - snapshot.transforms.size();
-        return (index < offset) ? identity : snapshot.transforms[index - offset];
-    };
+    snapshot.pivot = retrodict([&](size_t sample) { return snapshots[sample].pivot.array(); });
+    snapshot.transforms.resize(depth);
 
     for (size_t i = 0; i < depth; ++i) {
-        for (size_t j = 0; j < samples; ++j) {
-            const auto& transform = transform_at(j, i);
+        std::array<const Object::Transform*, 3uz> inputs{};
 
-            positions[j] = transform.position;
-            scales[j] = transform.scale.cwiseMax(kEpsilon).array().log();
-            rotations[j] = transform.rotation;
+        for (size_t sample = 0uz; sample < samples; ++sample) {
+            const auto& xforms = snapshots[sample].transforms;
+            const size_t offset = depth - xforms.size();
+            inputs[sample] = (i < offset) ? &identity : &xforms[i - offset];
         }
 
-        transforms[i] = {
-            .position = ExtrapolateVector(std::span(positions.data(), samples), degree),
-            .scale = ExtrapolateVector(std::span(scales.data(), samples), degree).array().exp().cwiseMax(kEpsilon),
-            .rotation = ExtrapolateScalar(std::span(rotations.data(), samples), degree),
-        };
+        auto& xform = snapshot.transforms[i];
+
+        xform.position = retrodict([&](size_t sample) { return inputs[sample]->position.array(); });
+
+        xform.scale =
+            retrodict([&](size_t sample) { return inputs[sample]->scale.array().log(); }).exp().cwiseMax(kEpsilon);
+
+        xform.rotation =
+            retrodict([&](size_t sample) { return Eigen::Array<float, 1, 1>::Constant(inputs[sample]->rotation); })[0];
     }
 
-    return Object::Snapshot{
-        .pivot = ExtrapolateVector(std::span(pivots.data(), samples), degree),
-        .transforms = std::move(transforms),
-    };
+    return snapshot;
 }
 
 [[nodiscard]] Object ResolveObject(const FILTER_PROC_VIDEO* ctx) {
@@ -394,7 +364,7 @@ cache::Store store{};
 
     const float angle = static_cast<float>(props::shutter::angle.value);
     const float amount = std::max(angle / 360.0f, 0.0f);
-    const float offset = static_cast<float>(props::shutter::phase.value) / angle;
+    const float phase = static_cast<float>(props::shutter::phase.value) / angle;
 
     Object object;
     auto& state = object.state;
@@ -432,8 +402,8 @@ cache::Store store{};
         state.depth = state.start.transforms.size();
     }
 
-    const auto apply_offset = [offset](Eigen::Vector2f& start, Eigen::Vector2f& end) {
-        const Eigen::Vector2f delta = (end - start) * offset;
+    const auto shift = [phase](Eigen::Vector2f& start, Eigen::Vector2f& end) {
+        const Eigen::Vector2f delta = (end - start) * phase;
         start += delta;
         end += delta;
     };
@@ -441,7 +411,7 @@ cache::Store store{};
     const auto pivot = Eigen::Translation2f(-state.start.pivot);
 
     state.end.pivot = lerp(state.start.pivot, state.end.pivot, amount);
-    apply_offset(state.start.pivot, state.end.pivot);
+    shift(state.start.pivot, state.end.pivot);
 
     for (size_t i = 0uz; i < state.depth; ++i) {
         auto& start = state.start.transforms[i];
@@ -454,14 +424,14 @@ cache::Store store{};
         end.scale = lerp(start.scale.cwiseInverse(), end.scale.cwiseInverse(), amount).cwiseInverse();
         end.rotation = std::lerp(start.rotation, end.rotation, amount);
 
-        apply_offset(start.position, end.position);
-        apply_offset(start.scale, end.scale);
+        shift(start.position, end.position);
+        shift(start.scale, end.scale);
 
         start.scale = start.scale.cwiseMax(kEpsilon);
         end.scale = end.scale.cwiseMax(kEpsilon);
 
         {
-            const float delta = (end.rotation - start.rotation) * offset;
+            const float delta = (end.rotation - start.rotation) * phase;
             start.rotation += delta;
             end.rotation += delta;
         }
@@ -482,17 +452,17 @@ cache::Store store{};
     const auto& state = object.state;
 
     const auto start_to_end = state.end.world_transform.inverse() * state.start.world_transform;
-    float max = 0.0f;
+    float samples = 0.0f;
 
     for (int i = 0; i < 4; ++i) {
         const Eigen::Vector2f corner((i & 1) != 0 ? object.dimensions.x() : 0.0f,
                                      (i & 2) != 0 ? object.dimensions.y() : 0.0f);
         const Eigen::Vector2f end = start_to_end * (corner - state.start.pivot) + state.end.pivot;
 
-        max = std::max(max, (end - corner).norm());
+        samples = std::max(samples, (end - corner).norm());
     }
 
-    return static_cast<int>(max + 1.0f);
+    return static_cast<int>(samples + 1.0f);
 }
 
 [[nodiscard]] Eigen::AlignedBox2f ComputeBox(const Object& object, int samples) {

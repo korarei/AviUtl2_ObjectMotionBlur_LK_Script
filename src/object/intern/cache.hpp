@@ -35,9 +35,9 @@ class Store {
     ~Store() = default;
 
     [[nodiscard]] Transform Get(const OBJECT_INFO* ctx, int pos);
-    [[nodiscard]] bool Get(const OBJECT_INFO* ctx, std::array<Transform, 4uz>& xforms);
+    [[nodiscard]] bool Get(const OBJECT_INFO* ctx, std::array<Transform, 2uz>& xforms);
     void Set(const FILTER_PROC_VIDEO* ctx);
-    void Set(const OBJECT_INFO* ctx, const std::array<Transform, 4uz>& xforms);
+    void Set(const OBJECT_INFO* ctx, const std::array<Transform, 2uz>& xforms);
 
     void Reset();
 
@@ -48,6 +48,6 @@ class Store {
     };
 
     std::mutex mutex_;
-    std::unordered_map<int64_t, std::vector<std::array<Entry, 6uz>>> cache_;
+    std::unordered_map<int64_t, std::vector<std::array<Entry, 4uz>>> cache_;
 };
 }  // namespace blur::object::cache
