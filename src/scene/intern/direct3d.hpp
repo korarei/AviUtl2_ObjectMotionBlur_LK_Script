@@ -159,6 +159,7 @@ class Renderer {
     }
 
     void Reset();
+    void Reset(int64_t id);
 
   private:
     struct alignas(16) FlowParam {

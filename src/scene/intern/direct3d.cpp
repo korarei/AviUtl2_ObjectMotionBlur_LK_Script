@@ -1034,6 +1034,11 @@ void Renderer::Reset() {
     Release();
 }
 
+void Renderer::Reset(int64_t id) {
+    const std::lock_guard lock(mutex_);
+    sessions_.erase(id);
+}
+
 void Renderer::Release() {
     std::unordered_map<int64_t, Flow::Session>{}.swap(sessions_);
 

@@ -690,11 +690,13 @@ constinit FILTER_PLUGIN_TABLE desc{
     .items = props,
     .func_proc_video = Apply,
     .func_proc_audio = nullptr,
+    .func_create = nullptr,
+    .func_destroy = nullptr,
 };
 }  // namespace
 
 namespace blur::object {
-void Init(HOST_APP_TABLE* host) {
+void Register(HOST_APP_TABLE* host) {
     host->register_filter_plugin(&desc);
 
     host->register_clear_cache_handler([]([[maybe_unused]] EDIT_SECTION* edit) {
@@ -703,7 +705,7 @@ void Init(HOST_APP_TABLE* host) {
     });
 }
 
-void Deinit() {
+void Unregister() {
     renderer.Reset();
     store.Reset();
 }

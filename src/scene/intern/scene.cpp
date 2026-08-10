@@ -101,18 +101,19 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         return true;
     }
 
-    auto* const object = ctx->edit->find_object(ctx->object->layer, ctx->object->frame_s + ctx->object->frame);
+    const int frame = ctx->object->frame_s + ctx->object->frame;
+    auto* const object = ctx->edit->find_object(ctx->object->effect_layer, frame);
 
     if (object == nullptr) {
         aul::Logger::Error(L"Failed to find object");
         return false;
     }
 
-    int section = -1;
+    int section = 0;
 
     {
         const auto n = ctx->edit->get_object_section_num(object);
-        while (section < n && ctx->edit->get_object_section_frame(object, section) <= ctx->object->frame) {
+        while (section < n && ctx->edit->get_object_section_frame(object, section) <= frame) {
             ++section;
         }
     }
@@ -216,23 +217,29 @@ constinit void* props[] = {
     nullptr,
 };
 
+void* Init([[maybe_unused]] int64_t id) { return nullptr; };
+
+void Deinit(int64_t id, [[maybe_unused]] void* userdata) { renderer.Reset(id); };
+
 constinit FILTER_PLUGIN_TABLE desc{
-    .flag = FILTER_PLUGIN_TABLE::FLAG_VIDEO | FILTER_PLUGIN_TABLE::FLAG_FILTER,
+    .flag = FILTER_PLUGIN_TABLE::FLAG_VIDEO | FILTER_PLUGIN_TABLE::FLAG_FILTER | FILTER_PLUGIN_TABLE::FLAG_USERDATA,
     .name = L"SceneMotionBlur_K",
     .label = L"ぼかし",
     .information = L"SceneMotionBlur_K v" VERSION L" by Korarei",
     .items = props,
     .func_proc_video = Apply,
     .func_proc_audio = nullptr,
+    .func_create = Init,
+    .func_destroy = Deinit,
 };
 }  // namespace
 
 namespace blur::scene {
-void Init(HOST_APP_TABLE* host) {
+void Register(HOST_APP_TABLE* host) {
     host->register_filter_plugin(&desc);
 
     host->register_clear_cache_handler([]([[maybe_unused]] EDIT_SECTION* edit) { renderer.Reset(); });
 }
 
-void Deinit() { renderer.Reset(); }
+void Unregister() { renderer.Reset(); }
 }  // namespace blur::scene

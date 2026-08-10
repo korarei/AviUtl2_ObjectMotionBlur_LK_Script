@@ -5,6 +5,6 @@
 #include <plugin2.h>
 
 namespace blur::scene {
-void Init(HOST_APP_TABLE* host);
-void Deinit();
+void Register(HOST_APP_TABLE* host);
+void Unregister();
 }  // namespace blur::scene
