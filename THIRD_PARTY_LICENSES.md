@@ -403,3 +403,51 @@
 >   This Source Code Form is "Incompatible With Secondary Licenses", as
 >   defined by the Mozilla Public License, v. 2.0.
 > ```
+
+## [NVIDIA Optical Flow SDK](https://developer.nvidia.com/optical-flow-sdk)
+
+This software contains source code provided by NVIDIA Corporation.
+
+同梱している NVIDIA Optical Flow SDK v5.0.7 のソースコードには下記の変更点が含まれる．
+
+- 8-bit Cost Buffer 出力
+- 双方向 Optical Flow 出力
+- D3D11 の未使用引数警告抑制
+- D3D11 API 関数リストの初期化結果検証
+- `NOMINMAX` の多重定義防止
+
+具体的な変更点はリポジトリ内の下記ファイルを参照されたい．
+
+- `NvOF.cpp`
+- `NvOF.h`
+- `NvOFD3D11.cpp`
+- `NvOFD3DCommon.cpp`
+- `NvOFDefines.h`
+
+リポジトリ内の各 NVIDIA Optical Flow SDK 由来ファイル先頭の著作権表示および MIT ライセンスを原文とし，以下には配布物への同梱のためその内容を転載する．
+
+> ```
+> Copyright (c) 2018-2023 NVIDIA Corporation
+> Copyright (c) 2019-2023 NVIDIA Corporation
+>
+> Permission is hereby granted, free of charge, to any person
+> obtaining a copy of this software and associated documentation
+> files (the "Software"), to deal in the Software without
+> restriction, including without limitation the rights to use,
+> copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the software, and to permit persons to whom the
+> software is furnished to do so, subject to the following
+> conditions:
+>
+> The above copyright notice and this permission notice shall be
+> included in all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+> EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+> OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+> NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+> HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+> WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+> FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+> OTHER DEALINGS IN THE SOFTWARE.
+> ```

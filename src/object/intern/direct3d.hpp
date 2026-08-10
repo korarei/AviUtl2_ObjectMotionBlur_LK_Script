@@ -4,36 +4,49 @@
 #include <wrl/client.h>
 
 #include <cstdint>
-#include <expected>
 #include <mutex>
-#include <string>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace blur::object::direct3d {
+enum class Error : uint8_t {
+    kDeviceRemoved = 1u,
+    kDeviceReset,
+    kDeviceHung,
+    kMapBufferFailed,
+    kCreateBufferFailed,
+    kCreateRenderTargetViewFailed,
+    kCreateShaderResourceViewFailed,
+    kCreateVertexShaderFailed,
+    kCreatePixelShaderFailed,
+    kCreateDepthStencilStateFailed,
+    kCreateSamplerStateFailed,
+};
+
+std::error_code make_error_code(Error error) noexcept;
+
 class Renderer {
   public:
     struct Affine2D {
-        float row0[3] = {1.0f, 0.0f, 0.0f};
-        float row1[3] = {0.0f, 1.0f, 0.0f};
+        float row0[3uz] = {1.0f, 0.0f, 0.0f};
+        float row1[3uz] = {0.0f, 1.0f, 0.0f};
     };
 
     struct alignas(16) Param {
         struct {
-            float row0[3] = {1.0f, 0.0f, 0.0f};
+            float row0[3uz] = {1.0f, 0.0f, 0.0f};
             float padding0 = 0.0f;
-            float row1[3] = {0.0f, 1.0f, 0.0f};
+            float row1[3uz] = {0.0f, 1.0f, 0.0f};
             float padding1 = 0.0f;
         } transform;
-        float origin[2] = {0.0f, 0.0f};
-        float texel[2] = {1.0f, 1.0f};
-        float mix[2] = {0.0f, 1.0f};
+        float origin[2uz] = {0.0f, 0.0f};
+        float texel[2uz] = {1.0f, 1.0f};
+        float mix[2uz] = {0.0f, 1.0f};
         float decay = 1.0f;
         int32_t samples = 1;
     };
-
-    using Result = std::expected<void, std::wstring>;
 
     class Context {
       public:
@@ -42,8 +55,8 @@ class Renderer {
         Context(Context&&) = delete;
         Context& operator=(Context&&) = delete;
 
-        [[nodiscard]] Result Draw(ID3D11Texture2D* src, const std::vector<Affine2D>& subframe_xforms,
-                                  const Param& param) const;
+        [[nodiscard]] std::error_code Draw(ID3D11Texture2D* src, const std::vector<Affine2D>& subframe_xforms,
+                                           const Param& param) const;
 
       private:
         friend class Renderer;
@@ -64,14 +77,19 @@ class Renderer {
     ~Renderer() = default;
 
     template <class F>
-    Result Render(ID3D11Texture2D* dst, F&& f) {
-        static_assert(std::is_same_v<std::invoke_result_t<F, Context&>, Result>);
+    std::error_code Render(ID3D11Texture2D* dst, F&& f) {
+        static_assert(std::is_same_v<std::invoke_result_t<F, Context&>, std::error_code>);
 
         const std::lock_guard lock(mutex_);
 
-        if (const auto result = Acquire(dst); !result.has_value()) {
-            return result;
+        if (const auto ec = Acquire(dst); ec != std::error_code{}) {
+            return ec;
         }
+
+        ctx_->OMSetBlendState(nullptr, nullptr, 0xffffffffu);
+        ctx_->OMSetDepthStencilState(dss_.Get(), 0u);
+        ctx_->RSSetState(nullptr);
+        ctx_->GSSetShader(nullptr, nullptr, 0u);
 
         Context ctx(*this, dst);
         return std::forward<F>(f)(ctx);
@@ -83,7 +101,7 @@ class Renderer {
     template <typename T>
     using ComPtr = Microsoft::WRL::ComPtr<T>;
 
-    [[nodiscard]] Result Acquire(ID3D11Texture2D* tex);
+    [[nodiscard]] std::error_code Acquire(ID3D11Texture2D* tex);
     void Release();
 
     std::mutex mutex_;
@@ -91,6 +109,7 @@ class Renderer {
     ComPtr<ID3D11Device> device_ = nullptr;
     ComPtr<ID3D11DeviceContext> ctx_ = nullptr;
 
+    ComPtr<ID3D11DepthStencilState> dss_ = nullptr;
     ComPtr<ID3D11VertexShader> vs_ = nullptr;
     ComPtr<ID3D11PixelShader> ps_ = nullptr;
     ComPtr<ID3D11SamplerState> smp_ = nullptr;
@@ -103,3 +122,6 @@ class Renderer {
     } xforms_{};
 };
 }  // namespace blur::object::direct3d
+
+template <>
+struct std::is_error_code_enum<blur::object::direct3d::Error> : true_type {};

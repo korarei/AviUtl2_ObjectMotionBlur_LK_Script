@@ -82,7 +82,7 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
     auto& prev = entries[0uz];
     auto& curr = entries[1uz];
 
-    if (!curr.frame.has_value() || *curr.frame != ctx->object->frame) {
+    if (curr.frame.has_value() && *curr.frame != ctx->object->frame) {
         prev = curr;
     }
 

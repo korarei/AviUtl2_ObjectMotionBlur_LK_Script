@@ -393,7 +393,7 @@ cache::Store store{};
     } else {
         const auto n = std::ssize(state.start.transforms) - std::ssize(state.end.transforms);
 
-        if (n > 0ll) {
+        if (n > 0) {
             state.end.transforms.insert(state.end.transforms.begin(), n, Object::Transform{});
         } else {
             state.start.transforms.insert(state.start.transforms.begin(), -n, Object::Transform{});
@@ -582,13 +582,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 
         ctx->set_image_data(nullptr, static_cast<int>(size.x()), static_cast<int>(size.y()));
 
-        if (!ctx->clear_image_resource(nullptr, {0, 0, 0, 0})) {
-            aul::Logger::Error(L"Failed to clear image resource");
-            return false;
-        }
-
-        auto* const src = ctx->get_image_resource_texture2d(L"resource:source");
         auto* const dst = ctx->get_image_texture2d();
+        auto* const src = ctx->get_image_resource_texture2d(L"resource:source");
 
         if (src == nullptr || dst == nullptr) {
             aul::Logger::Error(L"Failed to get image resource");
@@ -637,12 +632,12 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             .samples = samples,
         };
 
-        const auto result = renderer.Render(dst, [&param, src](d3d::Renderer::Context& ctx) -> d3d::Renderer::Result {
+        const auto ec = renderer.Render(dst, [src, &param](d3d::Renderer::Context& ctx) -> std::error_code {
             return ctx.Draw(src, subframe_xforms, param);
         });
 
-        if (!result.has_value()) {
-            aul::Logger::Error(result.error());
+        if (ec != std::error_code{}) {
+            aul::Logger::Error(string::ToWString(string::AsUTF8(ec.message())));
             return false;
         }
     }
@@ -687,7 +682,7 @@ constinit void* props[] = {
     nullptr,
 };
 
-constinit FILTER_PLUGIN_TABLE info{
+constinit FILTER_PLUGIN_TABLE desc{
     .flag = FILTER_PLUGIN_TABLE::FLAG_VIDEO,
     .name = L"ObjectMotionBlur_LK",
     .label = L"ぼかし",
@@ -700,7 +695,7 @@ constinit FILTER_PLUGIN_TABLE info{
 
 namespace blur::object {
 void Init(HOST_APP_TABLE* host) {
-    host->register_filter_plugin(&info);
+    host->register_filter_plugin(&desc);
 
     host->register_clear_cache_handler([]([[maybe_unused]] EDIT_SECTION* edit) {
         renderer.Reset();

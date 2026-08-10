@@ -16,7 +16,7 @@ cbuffer params : register(b0) {
 }
 
 inline float4 Sample(float2 pos) {
-    return source_texture.Sample(linear_sampler, (pos + 0.5) * texel);
+    return source_texture.Sample(linear_sampler, pos * texel);
 }
 
 float4 main(float4 pos : SV_Position) : SV_Target {

@@ -79,6 +79,7 @@ add_compile_definitions(
 add_subdirectory(intern/aviutl)
 
 add_subdirectory(object)
+add_subdirectory(scene)
 
 include(GenerateExportHeader)
 
@@ -95,6 +96,7 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE
         AviUtl
         ObjectMotionBlur
+        SceneMotionBlur
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
