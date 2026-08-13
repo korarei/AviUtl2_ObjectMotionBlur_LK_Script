@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-namespace blur::object::direct3d {
+namespace blur::object {
 enum class Error : uint8_t {
     kDeviceRemoved = 1u,
     kDeviceReset,
@@ -88,7 +88,9 @@ class Renderer {
 
         ctx_->OMSetBlendState(nullptr, nullptr, 0xffffffffu);
         ctx_->OMSetDepthStencilState(dss_.Get(), 0u);
+
         ctx_->RSSetState(nullptr);
+
         ctx_->GSSetShader(nullptr, nullptr, 0u);
 
         Context ctx(*this, dst);
@@ -121,7 +123,7 @@ class Renderer {
         size_t capacity = 0uz;
     } xforms_{};
 };
-}  // namespace blur::object::direct3d
+}  // namespace blur::object
 
 template <>
-struct std::is_error_code_enum<blur::object::direct3d::Error> : true_type {};
+struct std::is_error_code_enum<blur::object::Error> : true_type {};

@@ -3,19 +3,15 @@
 #include <algorithm>
 #include <cstring>
 
-#include <intern/aviutl/aviutl.hpp>
-
 #include <blur.h>
-#include <classify_layer.h>
 #include <convert.h>
-#include <debug.h>
 #include <decode_flow.h>
 #include <fullscreen.h>
-#include <propagate_layer.h>
-#include <reduce_layer.h>
+#include <propagate_init.h>
+#include <propagate.h>
 #include <regularize_flow.h>
 
-namespace blur::scene::direct3d {
+namespace blur::scene {
 namespace {
 class Direct3DErrorCategory final : public std::error_category {
   public:
@@ -79,8 +75,6 @@ class Direct3DErrorCategory final : public std::error_category {
 
 constinit const Direct3DErrorCategory kErrorCategory{};
 
-constexpr uint32_t kLayerTileSize = 16u;
-
 std::error_code ToErrorCode(HRESULT result, Error fallback) {
     switch (result) {
         case E_INVALIDARG:
@@ -107,7 +101,7 @@ std::error_code ToErrorCode(HRESULT result, Error fallback) {
 std::error_code ToErrorCode(NV_OF_STATUS status) {
     switch (status) {
         case NV_OF_SUCCESS:
-            return Error::kOpticalFlowInternalError;
+            return {};
         case NV_OF_ERR_INVALID_PTR:
         case NV_OF_ERR_INVALID_PARAM:
             return std::make_error_code(std::errc::invalid_argument);
@@ -131,391 +125,134 @@ std::error_code ToErrorCode(NV_OF_STATUS status) {
     }
     return Error::kOpticalFlowInternalError;
 }
+
+uint64_t MakeSessionID(const Renderer::ID& id) noexcept {
+    return (static_cast<uint64_t>(id.w) << 48u) | (static_cast<uint64_t>(id.h) << 32u) |
+           static_cast<uint32_t>(id.preset);
+}
 }  // namespace
 
 std::error_code make_error_code(Error error) noexcept { return {static_cast<int>(error), kErrorCategory}; }
 
-std::expected<Renderer::Flow, std::error_code> Renderer::Context::ComputeFlow(ID3D11Texture2D* src,
-                                                                              ID3D11Texture2D* depth,
-                                                                              const Param& param) const {
+std::error_code Renderer::Context::Draw(const Source& src, const Param& param) const {
+    struct {
+        std::array<ComPtr<ID3D11ShaderResourceView>, 2uz> inputs{};
+        ComPtr<ID3D11ShaderResourceView> depth = nullptr;
+    } view{};
+
+    const auto id = MakeSessionID(param.id);
+
     try {
-        struct NvOutput {
-            NvOFBufferObj buf = nullptr;
-            ComPtr<ID3D11Texture2D> tex = nullptr;
-            ComPtr<ID3D11ShaderResourceView> srv = nullptr;
-        };
+        auto it = owner_.sessions_.try_emplace(id).first;
+        auto& session = it->second;
 
-        auto& session = owner_.sessions_[param.id];
-
-        {
-            D3D11_TEXTURE2D_DESC desc{};
-            src->GetDesc(&desc);
-
-            if (session.ctx == nullptr || session.w != desc.Width || session.h != desc.Height) {
-                auto result = owner_.CreateFlowSession(desc.Width, desc.Height, param.preset);
-                if (result.has_value()) {
-                    session = std::move(*result);
-                } else {
-                    owner_.sessions_.erase(param.id);
-                    return std::unexpected(result.error());
-                }
+        if (session.ctx == nullptr) {
+            auto result = owner_.CreateSession(param.id);
+            if (result.has_value()) {
+                session = std::move(*result);
+            } else {
+                owner_.sessions_.erase(id);
+                return result.error();
             }
         }
 
-        HRESULT result;
-        std::error_code error_code;
+        D3D11_TEXTURE2D_DESC desc{};
+        dst_->GetDesc(&desc);
 
-        Flow flow;
-        flow.w = session.w;
-        flow.h = session.h;
-        flow.grid_size = session.grid_size;
-
-        std::array<NvOutput, 2uz> nv_flows{};
-        std::array<NvOutput, 2uz> nv_costs{};
-
-        const D3D11_VIEWPORT vp{
-            .TopLeftX = 0.0f,
-            .TopLeftY = 0.0f,
-            .Width = static_cast<float>(session.w),
-            .Height = static_cast<float>(session.h),
-            .MinDepth = 0.0f,
-            .MaxDepth = 1.0f,
-        };
-
-        auto& prev = session.inputs[0uz];
-        auto& curr = session.inputs[1uz];
-
-        if (curr.frame.has_value() && *curr.frame != param.frame) {
-            std::swap(prev, curr);
+        if (desc.Width != param.id.w || desc.Height != param.id.h) {
+            return std::make_error_code(std::errc::invalid_argument);
         }
 
-        flow.src_.tex = src;
-
-        result = owner_.device_->CreateShaderResourceView(src, nullptr, &flow.src_.srv);
-        if (FAILED(result)) {
-            owner_.sessions_.erase(param.id);
-            return std::unexpected(ToErrorCode(result, Error::kCreateShaderResourceViewFailed));
-        }
-
-        {
-            auto bufs = session.ctx->CreateBuffers(NV_OF_BUFFER_USAGE_OUTPUT, static_cast<uint32_t>(nv_flows.size()));
-            if (bufs.size() != nv_flows.size()) {
-                owner_.sessions_.erase(param.id);
-                return std::unexpected(make_error_code(Error::kCreateTexture2DFailed));
-            }
-
-            for (size_t i = 0uz; i < nv_flows.size(); ++i) {
-                auto& nv_flow = nv_flows[i];
-                nv_flow.buf = std::move(bufs[i]);
-                if (nv_flow.buf == nullptr) {
-                    owner_.sessions_.erase(param.id);
-                    return std::unexpected(make_error_code(Error::kCreateTexture2DFailed));
-                }
-
-                auto* const buf = static_cast<NvOFBufferD3D11*>(nv_flow.buf.get());
-                nv_flow.tex = buf->getD3D11TextureHandle();
-                result = owner_.device_->CreateShaderResourceView(nv_flow.tex.Get(), nullptr, &nv_flow.srv);
-                if (FAILED(result)) {
-                    owner_.sessions_.erase(param.id);
-                    return std::unexpected(ToErrorCode(result, Error::kCreateShaderResourceViewFailed));
-                }
-            }
-        }
-
-        {
-            auto bufs = session.ctx->CreateBuffers(NV_OF_BUFFER_USAGE_COST, static_cast<uint32_t>(nv_costs.size()));
-            if (bufs.size() != nv_costs.size()) {
-                owner_.sessions_.erase(param.id);
-                return std::unexpected(make_error_code(Error::kCreateTexture2DFailed));
-            }
-
-            for (size_t i = 0uz; i < nv_costs.size(); ++i) {
-                auto& nv_cost = nv_costs[i];
-                nv_cost.buf = std::move(bufs[i]);
-                if (nv_cost.buf == nullptr) {
-                    owner_.sessions_.erase(param.id);
-                    return std::unexpected(make_error_code(Error::kCreateTexture2DFailed));
-                }
-
-                auto* const buf = static_cast<NvOFBufferD3D11*>(nv_cost.buf.get());
-                result = owner_.device_->CreateShaderResourceView(buf->getD3D11TextureHandle(), nullptr, &nv_cost.srv);
-                if (FAILED(result)) {
-                    owner_.sessions_.erase(param.id);
-                    return std::unexpected(ToErrorCode(result, Error::kCreateShaderResourceViewFailed));
-                }
-            }
-        }
-
-        {
-            ComPtr<ID3D11RenderTargetView> rtv;
-            result = owner_.device_->CreateRenderTargetView(curr.tex.Get(), nullptr, &rtv);
+        for (size_t i = 0uz; i < view.inputs.size(); ++i) {
+            const HRESULT result = owner_.device_->CreateShaderResourceView(src.inputs[i], nullptr, &view.inputs[i]);
             if (FAILED(result)) {
-                owner_.sessions_.erase(param.id);
-                return std::unexpected(ToErrorCode(result, Error::kCreateRenderTargetViewFailed));
-            }
-
-            error_code = owner_.ToABGR8(rtv.Get(), flow.src_.srv.Get(), vp);
-            if (error_code != std::error_code{}) {
-                owner_.sessions_.erase(param.id);
-                return std::unexpected(error_code);
+                return ToErrorCode(result, Error::kCreateShaderResourceViewFailed);
             }
         }
 
-        curr.section = param.section;
-        curr.frame = param.frame;
-
-        const bool is_boundary = param.frame == 0 || !prev.frame.has_value() || curr.section != prev.section;
-
-        if (is_boundary) {
-            owner_.ctx_->CopyResource(prev.tex.Get(), curr.tex.Get());
-            prev.section = curr.section;
-            prev.frame = curr.frame;
+        {
+            const HRESULT result = owner_.device_->CreateShaderResourceView(src.depth, nullptr, &view.depth);
+            if (FAILED(result)) {
+                return ToErrorCode(result, Error::kCreateShaderResourceViewFailed);
+            }
         }
 
-        const auto df = param.frame - *prev.frame;
+        for (size_t i = 0uz; i < 2uz; ++i) {
+            owner_.ToABGR8(session.inputs[i].rtv.Get(), view.inputs[i].Get(), session.vp);
+        }
 
         // なぜか2回実行すると精度上がる (Temporal Hint が効いてる？)
 
-        session.ctx->Execute(curr.buf.get(), prev.buf.get(), nv_flows[0uz].buf.get(), nullptr, nv_costs[0uz].buf.get(),
-                             0u, nullptr, nullptr, 0u, nullptr, is_boundary || df != 1 ? NV_OF_TRUE : NV_OF_FALSE,
-                             nv_flows[1uz].buf.get(), nv_costs[1uz].buf.get());
+        session.ctx->Execute(session.inputs[0uz].buf.get(), session.inputs[1uz].buf.get(),
+                             session.outputs[0uz].buf.get(), nullptr, session.costs[0uz].buf.get(), 0u, nullptr,
+                             nullptr, 0u, nullptr, param.should_use_temporal_hints ? NV_OF_FALSE : NV_OF_TRUE,
+                             session.outputs[1uz].buf.get(), session.costs[1uz].buf.get());
 
-        session.ctx->Execute(curr.buf.get(), prev.buf.get(), nv_flows[0uz].buf.get(), nullptr, nv_costs[0uz].buf.get(),
-                             0u, nullptr, nullptr, 0u, nullptr, is_boundary || df != 1 ? NV_OF_TRUE : NV_OF_FALSE,
-                             nv_flows[1uz].buf.get(), nv_costs[1uz].buf.get());
-
-        FlowParam flow_param{
-            .resolution = {session.w, session.h},
+        session.ctx->Execute(session.inputs[0uz].buf.get(), session.inputs[1uz].buf.get(),
+                             session.outputs[0uz].buf.get(), nullptr, session.costs[0uz].buf.get(), 0u, nullptr,
+                             nullptr, 0u, nullptr, param.should_use_temporal_hints ? NV_OF_FALSE : NV_OF_TRUE,
+                             session.outputs[1uz].buf.get(), session.costs[1uz].buf.get());
+        const FlowParam flow_param{
+            .resolution = {param.id.w, param.id.h},
             .grid_size = session.grid_size,
-            .flow_scale = df == 0 ? 0.0f : 1.0f / static_cast<float>(df),
+            .flow_scale = param.scale,
+            .shutter = {param.phase, param.phase + param.amount},
+            .propagation_step = 0,
         };
 
-        const std::array<ID3D11ShaderResourceView*, 4uz> flows = {
-            nv_flows[0uz].srv.Get(),
-            nv_flows[1uz].srv.Get(),
-            nv_costs[0uz].srv.Get(),
-            nv_costs[1uz].srv.Get(),
-        };
+        const auto regularized = owner_.Regularize(session, flow_param);
+        if (!regularized.has_value()) {
+            return regularized.error();
+        }
 
-        ComPtr<ID3D11ShaderResourceView> depth_srv;
-        result = owner_.device_->CreateShaderResourceView(depth, nullptr, &depth_srv);
+        const auto propagated = owner_.Propagate(session, *regularized, view.inputs[0uz].Get(), view.depth.Get(),
+                                                 flow_param);
+        if (!propagated.has_value()) {
+            return propagated.error();
+        }
+
+        ComPtr<ID3D11RenderTargetView> rtv;
+        const HRESULT result = owner_.device_->CreateRenderTargetView(dst_, nullptr, &rtv);
         if (FAILED(result)) {
-            owner_.sessions_.erase(param.id);
-            return std::unexpected(ToErrorCode(result, Error::kCreateShaderResourceViewFailed));
+            return ToErrorCode(result, Error::kCreateRenderTargetViewFailed);
         }
 
-        auto output = owner_.CreateFlowOutput(flows, flow.src_.srv.Get(), depth_srv.Get(), flow_param);
-        if (!output.has_value()) {
-            owner_.sessions_.erase(param.id);
-            return std::unexpected(output.error());
-        }
+        const float w = static_cast<float>(param.id.w), h = static_cast<float>(param.id.h);
+        const float mix = param.mix * 2.0f;
+        const DrawParam draw_param{
+            .texel = {1.0f / w, 1.0f / h},
+            .shutter = {param.phase, param.phase + param.amount},
+            .mix = {std::min(2.0f - mix, 1.0f), std::min(mix, 1.0f)},
+            .falloff = param.falloff,
+            .sample_limit = param.sample_limit,
+        };
 
-        flow.output_ = std::move(*output);
+        const std::array<ID3D11ShaderResourceView*, 3uz> blur_inputs = {
+            view.inputs[0uz].Get(),
+            session.resources[*propagated].srv.Get(),
+            view.depth.Get(),
+        };
 
-        return flow;
+        return owner_.Blur(rtv.Get(), blur_inputs, draw_param, session.vp);
     } catch (const NvOFException& exception) {
-        owner_.sessions_.erase(param.id);
-        return std::unexpected(ToErrorCode(exception.getErrorCode()));
+        owner_.sessions_.erase(id);
+        return ToErrorCode(exception.getErrorCode());
     } catch (const std::bad_alloc&) {
-        owner_.sessions_.erase(param.id);
-        return std::unexpected(std::make_error_code(std::errc::not_enough_memory));
+        owner_.sessions_.erase(id);
+        return std::make_error_code(std::errc::not_enough_memory);
     } catch (const std::invalid_argument&) {
-        owner_.sessions_.erase(param.id);
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        owner_.sessions_.erase(id);
+        return std::make_error_code(std::errc::invalid_argument);
     } catch (const DXException&) {
-        owner_.sessions_.erase(param.id);
-        return std::unexpected(make_error_code(Error::kOpticalFlowDirect3DFailed));
+        owner_.sessions_.erase(id);
+        return make_error_code(Error::kOpticalFlowDirect3DFailed);
     } catch (const std::exception&) {
-        owner_.sessions_.erase(param.id);
-        return std::unexpected(make_error_code(Error::kOpticalFlowInternalError));
+        owner_.sessions_.erase(id);
+        return make_error_code(Error::kOpticalFlowInternalError);
     } catch (...) {
-        owner_.sessions_.erase(param.id);
-        return std::unexpected(make_error_code(Error::kUnknownOpticalFlowException));
+        owner_.sessions_.erase(id);
+        return make_error_code(Error::kUnknownOpticalFlowException);
     }
-}
-
-std::error_code Renderer::Context::Draw(const Flow& flow, const Param& param) const {
-    static constexpr ID3D11ShaderResourceView* null_srvs[5uz] = {nullptr, nullptr, nullptr, nullptr, nullptr};
-
-    {
-        D3D11_TEXTURE2D_DESC desc{};
-        dst_->GetDesc(&desc);
-
-        if (desc.Width != flow.w || desc.Height != flow.h) {
-            return std::make_error_code(std::errc::invalid_argument);
-        }
-    }
-
-    auto layer_tiles = owner_.CreateLayerTiles(flow, param);
-    if (!layer_tiles.has_value()) {
-        return layer_tiles.error();
-    }
-
-    HRESULT result;
-
-    const float w = static_cast<float>(flow.w), h = static_cast<float>(flow.h);
-
-    const float mix = param.mix * 2.0f;
-    DrawParam draw_param{
-        .texel =
-            {
-                1.0f / w,
-                1.0f / h,
-            },
-        .shutter =
-            {
-                param.phase,
-                param.phase + param.amount,
-            },
-        .mix =
-            {
-                std::min(2.0f - mix, 1.0f),
-                std::min(mix, 1.0f),
-            },
-        .falloff = param.falloff,
-        .sample_limit = param.sample_limit,
-    };
-
-    ID3D11ShaderResourceView* const inputs[] = {
-        flow.src_.srv.Get(),           flow.output_.regularized.srv.Get(), flow.output_.classified.srv.Get(),
-        (*layer_tiles)[0uz].srv.Get(), (*layer_tiles)[1uz].srv.Get(),
-    };
-
-    ComPtr<ID3D11RenderTargetView> rtv;
-    result = owner_.device_->CreateRenderTargetView(dst_, nullptr, &rtv);
-    if (FAILED(result)) {
-        return ToErrorCode(result, Error::kCreateRenderTargetViewFailed);
-    }
-
-    const D3D11_VIEWPORT vp{
-        .TopLeftX = 0.0f,
-        .TopLeftY = 0.0f,
-        .Width = w,
-        .Height = h,
-        .MinDepth = 0.0f,
-        .MaxDepth = 1.0f,
-    };
-
-    {
-        D3D11_MAPPED_SUBRESOURCE mapped{};
-
-        result = owner_.ctx_->Map(owner_.cb_.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped);
-        if (FAILED(result)) {
-            return ToErrorCode(result, Error::kMapBufferFailed);
-        }
-
-        std::memcpy(mapped.pData, &draw_param, sizeof(draw_param));
-        owner_.ctx_->Unmap(owner_.cb_.Get(), 0u);
-
-        owner_.ctx_->PSSetConstantBuffers(0u, 1u, owner_.cb_.GetAddressOf());
-    }
-
-    owner_.ctx_->IASetInputLayout(nullptr);
-    owner_.ctx_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    owner_.ctx_->VSSetShader(owner_.vs_.Get(), nullptr, 0u);
-
-    owner_.ctx_->PSSetShader(owner_.ps_.blur.Get(), nullptr, 0u);
-    owner_.ctx_->PSSetShaderResources(0u, 5u, inputs);
-    owner_.ctx_->PSSetSamplers(0u, 1u, owner_.smp_.GetAddressOf());
-
-    owner_.ctx_->OMSetRenderTargets(1u, rtv.GetAddressOf(), nullptr);
-
-    owner_.ctx_->RSSetViewports(1u, &vp);
-
-    owner_.ctx_->Draw(3u, 0u);
-
-    owner_.ctx_->OMSetRenderTargets(0u, nullptr, nullptr);
-    owner_.ctx_->PSSetShaderResources(0u, 5u, null_srvs);
-
-    return {};
-}
-
-std::error_code Renderer::Context::Debug(const Flow& flow, const Param& param) const {
-    static constexpr ID3D11ShaderResourceView* null_srvs[4uz] = {nullptr, nullptr, nullptr, nullptr};
-
-    {
-        D3D11_TEXTURE2D_DESC desc{};
-        dst_->GetDesc(&desc);
-
-        if (desc.Width != flow.w || desc.Height != flow.h) {
-            return std::make_error_code(std::errc::invalid_argument);
-        }
-    }
-
-    auto layer_tiles = owner_.CreateLayerTiles(flow, param);
-    if (!layer_tiles.has_value()) {
-        return layer_tiles.error();
-    }
-
-    HRESULT result;
-
-    const float w = static_cast<float>(flow.w), h = static_cast<float>(flow.h);
-
-    DebugParam debug_param{
-        .texel =
-            {
-                1.0f / w,
-                1.0f / h,
-            },
-        .mode = param.view_mode,
-        .scale = 0.01f,
-    };
-
-    ID3D11ShaderResourceView* const inputs[] = {
-        flow.output_.regularized.srv.Get(),
-        flow.output_.classified.srv.Get(),
-        (*layer_tiles)[0uz].srv.Get(),
-        (*layer_tiles)[1uz].srv.Get(),
-    };
-
-    ComPtr<ID3D11RenderTargetView> rtv;
-    result = owner_.device_->CreateRenderTargetView(dst_, nullptr, &rtv);
-    if (FAILED(result)) {
-        return ToErrorCode(result, Error::kCreateRenderTargetViewFailed);
-    }
-
-    const D3D11_VIEWPORT vp{
-        .TopLeftX = 0.0f,
-        .TopLeftY = 0.0f,
-        .Width = w,
-        .Height = h,
-        .MinDepth = 0.0f,
-        .MaxDepth = 1.0f,
-    };
-
-    {
-        D3D11_MAPPED_SUBRESOURCE mapped{};
-
-        result = owner_.ctx_->Map(owner_.cb_.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped);
-        if (FAILED(result)) {
-            return ToErrorCode(result, Error::kMapBufferFailed);
-        }
-
-        std::memcpy(mapped.pData, &debug_param, sizeof(DebugParam));
-        owner_.ctx_->Unmap(owner_.cb_.Get(), 0u);
-
-        owner_.ctx_->PSSetConstantBuffers(0u, 1u, owner_.cb_.GetAddressOf());
-    }
-
-    owner_.ctx_->IASetInputLayout(nullptr);
-    owner_.ctx_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    owner_.ctx_->VSSetShader(owner_.vs_.Get(), nullptr, 0u);
-
-    owner_.ctx_->PSSetShader(owner_.ps_.debug.Get(), nullptr, 0u);
-    owner_.ctx_->PSSetShaderResources(0u, 4u, inputs);
-
-    owner_.ctx_->OMSetRenderTargets(1u, rtv.GetAddressOf(), nullptr);
-
-    owner_.ctx_->RSSetViewports(1u, &vp);
-
-    owner_.ctx_->Draw(3u, 0u);
-
-    owner_.ctx_->OMSetRenderTargets(0u, nullptr, nullptr);
-    owner_.ctx_->PSSetShaderResources(0u, 4u, null_srvs);
-
-    return {};
 }
 
 std::error_code Renderer::Acquire(ID3D11Texture2D* tex) {
@@ -577,31 +314,19 @@ std::error_code Renderer::Acquire(ID3D11Texture2D* tex) {
         return ToErrorCode(result, Error::kCreateComputeShaderFailed);
     }
 
-    result = device_->CreatePixelShader(g_classify_layer, sizeof(g_classify_layer), nullptr, &ps_.classify_layer);
+    result = device_->CreatePixelShader(g_propagate_init, sizeof(g_propagate_init), nullptr, &ps_.propagate_init);
     if (FAILED(result)) {
         Release();
         return ToErrorCode(result, Error::kCreatePixelShaderFailed);
     }
 
-    result = device_->CreatePixelShader(g_reduce_layer, sizeof(g_reduce_layer), nullptr, &ps_.reduce_layer);
-    if (FAILED(result)) {
-        Release();
-        return ToErrorCode(result, Error::kCreatePixelShaderFailed);
-    }
-
-    result = device_->CreatePixelShader(g_propagate_layer, sizeof(g_propagate_layer), nullptr, &ps_.propagate_layer);
+    result = device_->CreatePixelShader(g_propagate, sizeof(g_propagate), nullptr, &ps_.propagate);
     if (FAILED(result)) {
         Release();
         return ToErrorCode(result, Error::kCreatePixelShaderFailed);
     }
 
     result = device_->CreatePixelShader(g_blur, sizeof(g_blur), nullptr, &ps_.blur);
-    if (FAILED(result)) {
-        Release();
-        return ToErrorCode(result, Error::kCreatePixelShaderFailed);
-    }
-
-    result = device_->CreatePixelShader(g_debug, sizeof(g_debug), nullptr, &ps_.debug);
     if (FAILED(result)) {
         Release();
         return ToErrorCode(result, Error::kCreatePixelShaderFailed);
@@ -631,9 +356,7 @@ std::error_code Renderer::Acquire(ID3D11Texture2D* tex) {
     {
         constexpr size_t size = std::max({
             sizeof(FlowParam),
-            sizeof(LayerPropagationParam),
             sizeof(DrawParam),
-            sizeof(DebugParam),
         });
 
         constexpr D3D11_BUFFER_DESC desc{
@@ -655,12 +378,21 @@ std::error_code Renderer::Acquire(ID3D11Texture2D* tex) {
     return {};
 }
 
-std::expected<Renderer::Flow::Session, std::error_code> Renderer::CreateFlowSession(uint32_t w, uint32_t h,
-                                                                                    NV_OF_PERF_LEVEL level) const {
-    Flow::Session session;
+std::expected<Renderer::Session, std::error_code> Renderer::CreateSession(const ID& id) const {
+    Session session;
+
+    const auto preset = id.preset == 0   ? NV_OF_PERF_LEVEL_SLOW
+                        : id.preset == 1 ? NV_OF_PERF_LEVEL_MEDIUM
+                                         : NV_OF_PERF_LEVEL_FAST;
+
+    const uint32_t w = static_cast<uint32_t>(id.w), h = static_cast<uint32_t>(id.h);
 
     session.ctx =
-        NvOFD3D11::Create(device_.Get(), ctx_.Get(), w, h, NV_OF_BUFFER_FORMAT_ABGR8, NV_OF_MODE_OPTICALFLOW, level);
+        NvOFD3D11::Create(device_.Get(), ctx_.Get(), w, h, NV_OF_BUFFER_FORMAT_ABGR8, NV_OF_MODE_OPTICALFLOW, preset);
+
+    if (session.ctx == nullptr) {
+        return std::unexpected(make_error_code(Error::kOpticalFlowUnavailable));
+    }
 
     {
         uint32_t size = 1u;
@@ -672,6 +404,8 @@ std::expected<Renderer::Flow::Session, std::error_code> Renderer::CreateFlowSess
         session.ctx->Init(size, NV_OF_HINT_VECTOR_GRID_SIZE_UNDEFINED, false, false, true, NV_OF_PRED_DIRECTION_BOTH);
         session.grid_size = size;
     }
+
+    HRESULT result;
 
     {
         auto bufs = session.ctx->CreateBuffers(NV_OF_BUFFER_USAGE_INPUT, static_cast<uint32_t>(session.inputs.size()));
@@ -687,27 +421,55 @@ std::expected<Renderer::Flow::Session, std::error_code> Renderer::CreateFlowSess
             }
 
             auto* const buf = static_cast<NvOFBufferD3D11*>(input.buf.get());
-            input.tex = buf->getD3D11TextureHandle();
+            result = device_->CreateRenderTargetView(buf->getD3D11TextureHandle(), nullptr, &input.rtv);
+            if (FAILED(result)) {
+                return std::unexpected(ToErrorCode(result, Error::kCreateRenderTargetViewFailed));
+            }
         }
     }
 
-    session.w = w;
-    session.h = h;
+    {
+        auto bufs =
+            session.ctx->CreateBuffers(NV_OF_BUFFER_USAGE_OUTPUT, static_cast<uint32_t>(session.outputs.size()));
+        if (bufs.size() != session.outputs.size()) {
+            return std::unexpected(make_error_code(Error::kCreateTexture2DFailed));
+        }
 
-    return session;
-}
+        for (size_t i = 0uz; i < session.outputs.size(); ++i) {
+            auto& output = session.outputs[i];
+            output.buf = std::move(bufs[i]);
+            if (output.buf == nullptr) {
+                return std::unexpected(make_error_code(Error::kCreateTexture2DFailed));
+            }
 
-std::expected<Renderer::Flow::Output, std::error_code> Renderer::CreateFlowOutput(
-    const std::array<ID3D11ShaderResourceView*, 4uz>& flows, ID3D11ShaderResourceView* src,
-    ID3D11ShaderResourceView* depth, const FlowParam& param) const {
-    static constexpr ID3D11ShaderResourceView* null_srvs[4uz] = {nullptr, nullptr, nullptr, nullptr};
-    static constexpr ID3D11UnorderedAccessView* null_uav = nullptr;
+            auto* const buf = static_cast<NvOFBufferD3D11*>(output.buf.get());
+            result = device_->CreateShaderResourceView(buf->getD3D11TextureHandle(), nullptr, &output.srv);
+            if (FAILED(result)) {
+                return std::unexpected(ToErrorCode(result, Error::kCreateShaderResourceViewFailed));
+            }
+        }
+    }
 
-    const auto& [w, h] = param.resolution;
+    {
+        auto bufs = session.ctx->CreateBuffers(NV_OF_BUFFER_USAGE_COST, static_cast<uint32_t>(session.costs.size()));
+        if (bufs.size() != session.costs.size()) {
+            return std::unexpected(make_error_code(Error::kCreateTexture2DFailed));
+        }
 
-    Flow::Output output{};
+        for (size_t i = 0uz; i < session.costs.size(); ++i) {
+            auto& cost = session.costs[i];
+            cost.buf = std::move(bufs[i]);
+            if (cost.buf == nullptr) {
+                return std::unexpected(make_error_code(Error::kCreateTexture2DFailed));
+            }
 
-    HRESULT result;
+            auto* const buf = static_cast<NvOFBufferD3D11*>(cost.buf.get());
+            result = device_->CreateShaderResourceView(buf->getD3D11TextureHandle(), nullptr, &cost.srv);
+            if (FAILED(result)) {
+                return std::unexpected(ToErrorCode(result, Error::kCreateShaderResourceViewFailed));
+            }
+        }
+    }
 
     {
         const D3D11_TEXTURE2D_DESC desc{
@@ -723,296 +485,209 @@ std::expected<Renderer::Flow::Output, std::error_code> Renderer::CreateFlowOutpu
             .MiscFlags = 0u,
         };
 
-        const auto create = [this, &desc](Texture& dst) -> std::error_code {
-            HRESULT result = device_->CreateTexture2D(&desc, nullptr, &dst.tex);
+        for (auto& res : session.resources) {
+            result = device_->CreateTexture2D(&desc, nullptr, &res.tex);
             if (FAILED(result)) {
-                return ToErrorCode(result, Error::kCreateTexture2DFailed);
+                return std::unexpected(ToErrorCode(result, Error::kCreateTexture2DFailed));
             }
 
-            result = device_->CreateShaderResourceView(dst.tex.Get(), nullptr, &dst.srv);
+            result = device_->CreateShaderResourceView(res.tex.Get(), nullptr, &res.srv);
             if (FAILED(result)) {
-                return ToErrorCode(result, Error::kCreateShaderResourceViewFailed);
+                return std::unexpected(ToErrorCode(result, Error::kCreateShaderResourceViewFailed));
             }
 
-            return {};
-        };
+            result = device_->CreateRenderTargetView(res.tex.Get(), nullptr, &res.rtv);
+            if (FAILED(result)) {
+                return std::unexpected(ToErrorCode(result, Error::kCreateRenderTargetViewFailed));
+            }
 
-        if (const auto ec = create(output.decoded); ec != std::error_code{}) {
-            return std::unexpected(ec);
-        }
-
-        if (const auto ec = create(output.regularized); ec != std::error_code{}) {
-            return std::unexpected(ec);
-        }
-
-        if (const auto ec = create(output.classified); ec != std::error_code{}) {
-            return std::unexpected(ec);
+            result = device_->CreateUnorderedAccessView(res.tex.Get(), nullptr, &res.uav);
+            if (FAILED(result)) {
+                return std::unexpected(ToErrorCode(result, Error::kCreateUnorderedAccessViewFailed));
+            }
         }
     }
 
-    {
-        const D3D11_VIEWPORT vp{
-            .TopLeftX = 0.0f,
-            .TopLeftY = 0.0f,
-            .Width = static_cast<float>(w),
-            .Height = static_cast<float>(h),
-            .MinDepth = 0.0f,
-            .MaxDepth = 1.0f,
-        };
+    session.vp = {
+        .TopLeftX = 0.0f,
+        .TopLeftY = 0.0f,
+        .Width = static_cast<float>(w),
+        .Height = static_cast<float>(h),
+        .MinDepth = 0.0f,
+        .MaxDepth = 1.0f,
+    };
 
-        ctx_->RSSetViewports(1u, &vp);
-    }
+    return session;
+}
 
-    {
+std::expected<size_t, std::error_code> Renderer::Regularize(const Session& session, const FlowParam& param) const {
+    static constexpr ID3D11ShaderResourceView* null_ps_srvs[4uz] = {nullptr, nullptr, nullptr, nullptr};
+    static constexpr ID3D11ShaderResourceView* null_cs_srvs[1uz] = {nullptr};
+    static constexpr ID3D11UnorderedAccessView* null_uav = nullptr;
+
+    const auto set_params = [this](const FlowParam& value) -> std::error_code {
         D3D11_MAPPED_SUBRESOURCE mapped{};
-
-        result = ctx_->Map(cb_.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped);
+        const HRESULT result = ctx_->Map(cb_.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped);
         if (FAILED(result)) {
-            return std::unexpected(ToErrorCode(result, Error::kMapBufferFailed));
+            return ToErrorCode(result, Error::kMapBufferFailed);
         }
 
-        std::memcpy(mapped.pData, &param, sizeof(param));
+        std::memcpy(mapped.pData, &value, sizeof(value));
         ctx_->Unmap(cb_.Get(), 0u);
+        return {};
+    };
 
-        ctx_->PSSetConstantBuffers(0u, 1u, cb_.GetAddressOf());
-        ctx_->CSSetConstantBuffers(0u, 1u, cb_.GetAddressOf());
+    const uint32_t width = param.resolution[0uz];
+    const uint32_t height = param.resolution[1uz];
+
+    if (const auto ec = set_params(param); ec != std::error_code{}) {
+        return std::unexpected(ec);
     }
 
     ctx_->IASetInputLayout(nullptr);
     ctx_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
     ctx_->VSSetShader(vs_.Get(), nullptr, 0u);
-
-    ctx_->PSSetSamplers(0u, 1u, smp_.GetAddressOf());
+    ctx_->RSSetViewports(1u, &session.vp);
+    ctx_->PSSetConstantBuffers(0u, 1u, cb_.GetAddressOf());
 
     {
-        ComPtr<ID3D11RenderTargetView> rtv;
-        result = device_->CreateRenderTargetView(output.decoded.tex.Get(), nullptr, &rtv);
-        if (FAILED(result)) {
-            return std::unexpected(ToErrorCode(result, Error::kCreateRenderTargetViewFailed));
-        }
+        const std::array<ID3D11ShaderResourceView*, 4uz> inputs = {
+            session.outputs[0uz].srv.Get(),
+            session.outputs[1uz].srv.Get(),
+            session.costs[0uz].srv.Get(),
+            session.costs[1uz].srv.Get(),
+        };
+        ID3D11RenderTargetView* const target = session.resources[0uz].rtv.Get();
 
         ctx_->PSSetShader(ps_.decode_flow.Get(), nullptr, 0u);
-        ctx_->PSSetShaderResources(0u, static_cast<UINT>(flows.size()), flows.data());
-
-        ctx_->OMSetRenderTargets(1u, rtv.GetAddressOf(), nullptr);
-
+        ctx_->PSSetShaderResources(0u, static_cast<UINT>(inputs.size()), inputs.data());
+        ctx_->OMSetRenderTargets(1u, &target, nullptr);
         ctx_->Draw(3u, 0u);
+        ctx_->OMSetRenderTargets(0u, nullptr, nullptr);
+        ctx_->PSSetShaderResources(0u, 4u, null_ps_srvs);
+    }
 
+    ctx_->CSSetShader(cs_.regularize_flow.Get(), nullptr, 0u);
+    ctx_->CSSetConstantBuffers(0u, 1u, cb_.GetAddressOf());
+
+    const std::array<int32_t, 7uz> steps = {0, 2, 4, 8, 16, 32, 64};
+    size_t input_index = 0uz;
+    size_t output_index = 1uz;
+
+    for (const int32_t step : steps) {
+        FlowParam regularize_param = param;
+        regularize_param.propagation_step = step;
+
+        if (const auto ec = set_params(regularize_param); ec != std::error_code{}) {
+            return std::unexpected(ec);
+        }
+
+        ID3D11ShaderResourceView* const input = session.resources[input_index].srv.Get();
+        ID3D11UnorderedAccessView* const target = session.resources[output_index].uav.Get();
+
+        ctx_->CSSetShaderResources(0u, 1u, &input);
+        ctx_->CSSetUnorderedAccessViews(0u, 1u, &target, nullptr);
+        ctx_->Dispatch((width + 7u) / 8u, (height + 7u) / 8u, 1u);
+        ctx_->CSSetUnorderedAccessViews(0u, 1u, &null_uav, nullptr);
+        ctx_->CSSetShaderResources(0u, 1u, null_cs_srvs);
+
+        std::swap(input_index, output_index);
+    }
+
+    return input_index;
+}
+
+std::expected<size_t, std::error_code> Renderer::Propagate(
+    const Session& session, size_t regularized, ID3D11ShaderResourceView* src, ID3D11ShaderResourceView* depth,
+    const FlowParam& param) const {
+    static constexpr ID3D11ShaderResourceView* null_srvs[4uz] = {nullptr, nullptr, nullptr, nullptr};
+
+    if (regularized >= session.resources.size()) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
+
+    const auto set_params = [this](const FlowParam& value) -> std::error_code {
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        const HRESULT result = ctx_->Map(cb_.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped);
+        if (FAILED(result)) {
+            return ToErrorCode(result, Error::kMapBufferFailed);
+        }
+
+        std::memcpy(mapped.pData, &value, sizeof(value));
+        ctx_->Unmap(cb_.Get(), 0u);
+        return {};
+    };
+
+    const uint32_t width = param.resolution[0uz];
+    const uint32_t height = param.resolution[1uz];
+    const uint32_t range = std::max(width, height);
+    size_t current = (regularized + 1uz) % session.resources.size();
+    size_t next = (current + 1uz) % session.resources.size();
+
+    ctx_->IASetInputLayout(nullptr);
+    ctx_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    ctx_->VSSetShader(vs_.Get(), nullptr, 0u);
+    ctx_->PSSetSamplers(0u, 1u, smp_.GetAddressOf());
+    ctx_->RSSetViewports(1u, &session.vp);
+    ctx_->PSSetConstantBuffers(0u, 1u, cb_.GetAddressOf());
+
+    {
+        FlowParam propagation_param = param;
+        propagation_param.propagation_step = 0;
+
+        if (const auto ec = set_params(propagation_param); ec != std::error_code{}) {
+            return std::unexpected(ec);
+        }
+
+        const std::array<ID3D11ShaderResourceView*, 4uz> inputs = {
+            session.resources[regularized].srv.Get(),
+            src,
+            depth,
+            nullptr,
+        };
+        ID3D11RenderTargetView* const target = session.resources[current].rtv.Get();
+
+        ctx_->PSSetShader(ps_.propagate_init.Get(), nullptr, 0u);
+        ctx_->PSSetShaderResources(0u, static_cast<UINT>(inputs.size()), inputs.data());
+        ctx_->OMSetRenderTargets(1u, &target, nullptr);
+        ctx_->Draw(3u, 0u);
         ctx_->OMSetRenderTargets(0u, nullptr, nullptr);
         ctx_->PSSetShaderResources(0u, 4u, null_srvs);
     }
 
-    {
-        ID3D11ShaderResourceView* const inputs[2uz] = {output.decoded.srv.Get(), src};
+    for (uint32_t step = 1u, distance = 0u; distance < range; step <<= 1u) {
+        FlowParam propagation_param = param;
+        propagation_param.propagation_step = static_cast<int32_t>(step);
 
-        ComPtr<ID3D11UnorderedAccessView> uav;
-        result = device_->CreateUnorderedAccessView(output.regularized.tex.Get(), nullptr, &uav);
-        if (FAILED(result)) {
-            return std::unexpected(ToErrorCode(result, Error::kCreateUnorderedAccessViewFailed));
+        if (const auto ec = set_params(propagation_param); ec != std::error_code{}) {
+            return std::unexpected(ec);
         }
 
-        ctx_->CSSetShader(cs_.regularize_flow.Get(), nullptr, 0u);
-        ctx_->CSSetShaderResources(0u, 2u, inputs);
-        ctx_->CSSetUnorderedAccessViews(0u, 1u, uav.GetAddressOf(), nullptr);
+        const std::array<ID3D11ShaderResourceView*, 4uz> inputs = {
+            nullptr,
+            nullptr,
+            depth,
+            session.resources[current].srv.Get(),
+        };
+        ID3D11RenderTargetView* const target = session.resources[next].rtv.Get();
 
-        ctx_->Dispatch((w + 7u) / 8u, (h + 7u) / 8u, 1u);
-
-        ctx_->CSSetUnorderedAccessViews(0u, 1u, &null_uav, nullptr);
-        ctx_->CSSetShaderResources(0u, 2u, null_srvs);
-    }
-
-    {
-        ID3D11ShaderResourceView* const inputs[3uz] = {output.regularized.srv.Get(), src, depth};
-
-        ComPtr<ID3D11RenderTargetView> rtv;
-        result = device_->CreateRenderTargetView(output.classified.tex.Get(), nullptr, &rtv);
-        if (FAILED(result)) {
-            return std::unexpected(ToErrorCode(result, Error::kCreateRenderTargetViewFailed));
-        }
-
-        ctx_->PSSetShader(ps_.classify_layer.Get(), nullptr, 0u);
-        ctx_->PSSetShaderResources(0u, 3u, inputs);
-
-        ctx_->OMSetRenderTargets(1u, rtv.GetAddressOf(), nullptr);
-
+        ctx_->PSSetShader(ps_.propagate.Get(), nullptr, 0u);
+        ctx_->PSSetShaderResources(0u, static_cast<UINT>(inputs.size()), inputs.data());
+        ctx_->OMSetRenderTargets(1u, &target, nullptr);
         ctx_->Draw(3u, 0u);
-
         ctx_->OMSetRenderTargets(0u, nullptr, nullptr);
-        ctx_->PSSetShaderResources(0u, 3u, null_srvs);
+        ctx_->PSSetShaderResources(0u, 4u, null_srvs);
+
+        current = next;
+        next = (current + 1uz) % session.resources.size();
+        distance += step;
     }
 
-    return output;
+    return current;
 }
 
-std::expected<std::array<Renderer::Texture, 2uz>, std::error_code> Renderer::CreateLayerTiles(
-    const Flow& flow, const Param& param) const {
-    static constexpr ID3D11ShaderResourceView* null_srvs[2uz] = {nullptr, nullptr};
-
-    struct Tile {
-        Texture output{};
-        ComPtr<ID3D11RenderTargetView> rtv = nullptr;
-    } tiles[2uz][2uz]{};
-
-    const uint32_t tile_w = (flow.w + kLayerTileSize - 1u) / kLayerTileSize;
-    const uint32_t tile_h = (flow.h + kLayerTileSize - 1u) / kLayerTileSize;
-
-    {
-        const D3D11_TEXTURE2D_DESC desc{
-            .Width = tile_w,
-            .Height = tile_h,
-            .MipLevels = 1u,
-            .ArraySize = 1u,
-            .Format = DXGI_FORMAT_R32G32B32A32_FLOAT,
-            .SampleDesc = {.Count = 1u, .Quality = 0u},
-            .Usage = D3D11_USAGE_DEFAULT,
-            .BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE,
-            .CPUAccessFlags = 0u,
-            .MiscFlags = 0u,
-        };
-
-        const auto create = [this, &desc](Tile& dst) -> std::error_code {
-            HRESULT result = device_->CreateTexture2D(&desc, nullptr, &dst.output.tex);
-            if (FAILED(result)) {
-                return ToErrorCode(result, Error::kCreateTexture2DFailed);
-            }
-
-            result = device_->CreateShaderResourceView(dst.output.tex.Get(), nullptr, &dst.output.srv);
-            if (FAILED(result)) {
-                return ToErrorCode(result, Error::kCreateShaderResourceViewFailed);
-            }
-
-            result = device_->CreateRenderTargetView(dst.output.tex.Get(), nullptr, &dst.rtv);
-            if (FAILED(result)) {
-                return ToErrorCode(result, Error::kCreateRenderTargetViewFailed);
-            }
-
-            return {};
-        };
-
-        for (auto& buf : tiles) {
-            for (auto& tile : buf) {
-                if (const auto ec = create(tile); ec != std::error_code{}) {
-                    return std::unexpected(ec);
-                }
-            }
-        }
-    }
-
-    {
-        const D3D11_VIEWPORT vp{
-            .TopLeftX = 0.0f,
-            .TopLeftY = 0.0f,
-            .Width = static_cast<float>(tile_w),
-            .Height = static_cast<float>(tile_h),
-            .MinDepth = 0.0f,
-            .MaxDepth = 1.0f,
-        };
-
-        ctx_->RSSetViewports(1u, &vp);
-    }
-
-    ctx_->IASetInputLayout(nullptr);
-    ctx_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    ctx_->VSSetShader(vs_.Get(), nullptr, 0u);
-
-    {
-        ID3D11RenderTargetView* const outputs[] = {
-            tiles[0uz][0uz].rtv.Get(),
-            tiles[0uz][1uz].rtv.Get(),
-        };
-        ID3D11ShaderResourceView* const inputs[] = {
-            flow.output_.classified.srv.Get(),
-            flow.src_.srv.Get(),
-        };
-
-        ctx_->PSSetShader(ps_.reduce_layer.Get(), nullptr, 0u);
-        ctx_->PSSetShaderResources(0u, 2u, inputs);
-
-        ctx_->OMSetRenderTargets(2u, outputs, nullptr);
-
-        ctx_->Draw(3u, 0u);
-
-        ctx_->OMSetRenderTargets(0u, nullptr, nullptr);
-        ctx_->PSSetShaderResources(0u, 2u, null_srvs);
-    }
-
-    ctx_->PSSetShader(ps_.propagate_layer.Get(), nullptr, 0u);
-
-    uint32_t curr = 0u;
-
-    LayerPropagationParam prop_param{
-        .resolution =
-            {
-                static_cast<float>(flow.w),
-                static_cast<float>(flow.h),
-            },
-        .shutter =
-            {
-                param.phase,
-                param.phase + param.amount,
-            },
-        .step = 1,
-    };
-
-    const uint32_t range = std::max(tile_w, tile_h);
-    for (uint32_t step = 1u, dist = 0u; dist < range; step <<= 1u) {
-        const uint32_t next = 1u - curr;
-        ID3D11RenderTargetView* const outputs[] = {
-            tiles[next][0uz].rtv.Get(),
-            tiles[next][1uz].rtv.Get(),
-        };
-        ID3D11ShaderResourceView* const inputs[] = {
-            tiles[curr][0uz].output.srv.Get(),
-            tiles[curr][1uz].output.srv.Get(),
-        };
-
-        prop_param.step = static_cast<int32_t>(step);
-
-        {
-            D3D11_MAPPED_SUBRESOURCE mapped{};
-
-            HRESULT result = ctx_->Map(cb_.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped);
-            if (FAILED(result)) {
-                return std::unexpected(ToErrorCode(result, Error::kMapBufferFailed));
-            }
-
-            std::memcpy(mapped.pData, &prop_param, sizeof(prop_param));
-            ctx_->Unmap(cb_.Get(), 0u);
-
-            ctx_->PSSetConstantBuffers(0u, 1u, cb_.GetAddressOf());
-        }
-
-        ctx_->PSSetShaderResources(0u, 2u, inputs);
-
-        ctx_->OMSetRenderTargets(2u, outputs, nullptr);
-
-        ctx_->Draw(3u, 0u);
-
-        ctx_->OMSetRenderTargets(0u, nullptr, nullptr);
-        ctx_->PSSetShaderResources(0u, 2u, null_srvs);
-
-        curr = next;
-        dist += step;
-    }
-
-    std::array<Texture, 2uz> output{};
-    for (size_t i = 0uz; i < output.size(); ++i) {
-        output[i] = std::move(tiles[curr][i].output);
-    }
-
-    return output;
-}
-
-std::error_code Renderer::ToABGR8(ID3D11RenderTargetView* dst, ID3D11ShaderResourceView* src,
-                                  const D3D11_VIEWPORT& vp) const {
+void Renderer::ToABGR8(ID3D11RenderTargetView* dst, ID3D11ShaderResourceView* src, const D3D11_VIEWPORT& vp) const {
     static constexpr ID3D11ShaderResourceView* null_srv = nullptr;
-
-    ctx_->IASetInputLayout(nullptr);
-    ctx_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    ctx_->VSSetShader(vs_.Get(), nullptr, 0u);
 
     ctx_->PSSetShader(ps_.convert.Get(), nullptr, 0u);
     ctx_->PSSetShaderResources(0u, 1u, &src);
@@ -1025,6 +700,40 @@ std::error_code Renderer::ToABGR8(ID3D11RenderTargetView* dst, ID3D11ShaderResou
 
     ctx_->OMSetRenderTargets(0u, nullptr, nullptr);
     ctx_->PSSetShaderResources(0u, 1u, &null_srv);
+}
+
+std::error_code Renderer::Blur(ID3D11RenderTargetView* dst, const std::array<ID3D11ShaderResourceView*, 3uz>& src,
+                               DrawParam param, const D3D11_VIEWPORT& vp) const {
+    static constexpr ID3D11ShaderResourceView* null_srvs[3uz] = {nullptr, nullptr, nullptr};
+
+    HRESULT result;
+
+    {
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+
+        result = ctx_->Map(cb_.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped);
+        if (FAILED(result)) {
+            return ToErrorCode(result, Error::kMapBufferFailed);
+        }
+
+        std::memcpy(mapped.pData, &param, sizeof(param));
+        ctx_->Unmap(cb_.Get(), 0u);
+
+        ctx_->PSSetConstantBuffers(0u, 1u, cb_.GetAddressOf());
+    }
+
+    ctx_->PSSetShader(ps_.blur.Get(), nullptr, 0u);
+    ctx_->PSSetShaderResources(0u, 3u, src.data());
+    ctx_->PSSetSamplers(0u, 1u, smp_.GetAddressOf());
+
+    ctx_->OMSetRenderTargets(1u, &dst, nullptr);
+
+    ctx_->RSSetViewports(1u, &vp);
+
+    ctx_->Draw(3u, 0u);
+
+    ctx_->OMSetRenderTargets(0u, nullptr, nullptr);
+    ctx_->PSSetShaderResources(0u, 3u, null_srvs);
 
     return {};
 }
@@ -1034,21 +743,14 @@ void Renderer::Reset() {
     Release();
 }
 
-void Renderer::Reset(int64_t id) {
-    const std::lock_guard lock(mutex_);
-    sessions_.erase(id);
-}
-
 void Renderer::Release() {
-    std::unordered_map<int64_t, Flow::Session>{}.swap(sessions_);
+    sessions_.clear();
 
     cb_.Reset();
     smp_.Reset();
-    ps_.debug.Reset();
     ps_.blur.Reset();
-    ps_.propagate_layer.Reset();
-    ps_.reduce_layer.Reset();
-    ps_.classify_layer.Reset();
+    ps_.propagate.Reset();
+    ps_.propagate_init.Reset();
     ps_.decode_flow.Reset();
     ps_.convert.Reset();
     vs_.Reset();
@@ -1058,4 +760,4 @@ void Renderer::Release() {
     ctx_.Reset();
     device_.Reset();
 }
-}  // namespace blur::scene::direct3d
+}  // namespace blur::scene

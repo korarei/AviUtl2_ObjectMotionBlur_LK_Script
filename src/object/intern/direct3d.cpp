@@ -3,7 +3,7 @@
 #include <blur.h>
 #include <fullscreen.h>
 
-namespace blur::object::direct3d {
+namespace blur::object {
 namespace {
 class Direct3DErrorCategory final : public std::error_category {
   public:
@@ -285,4 +285,4 @@ void Renderer::Release() {
     ctx_.Reset();
     device_.Reset();
 }
-}  // namespace blur::object::direct3d
+}  // namespace blur::object

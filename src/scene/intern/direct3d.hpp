@@ -13,13 +13,15 @@
 
 #include <array>
 #include <cstdint>
+#include <cstddef>
 #include <expected>
 #include <mutex>
-#include <optional>
+#include <system_error>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 
-namespace blur::scene::direct3d {
+namespace blur::scene {
 enum class Error : uint8_t {
     kDeviceRemoved = 1u,
     kDeviceReset,
@@ -50,57 +52,21 @@ enum class Error : uint8_t {
 std::error_code make_error_code(Error error) noexcept;
 
 class Renderer {
-  private:
-    template <typename T>
-    using ComPtr = Microsoft::WRL::ComPtr<T>;
-
-    struct Texture {
-        ComPtr<ID3D11Texture2D> tex = nullptr;
-        ComPtr<ID3D11ShaderResourceView> srv = nullptr;
+  public:
+    struct Source {
+        std::array<ID3D11Texture2D*, 2uz> inputs{};
+        ID3D11Texture2D* depth = nullptr;
     };
 
-  public:
-    class Context;
-
-    class Flow {
-      public:
-        uint32_t grid_size = 1u;
-
-      private:
-        struct Input {
-            NvOFBufferObj buf = nullptr;
-            ComPtr<ID3D11Texture2D> tex = nullptr;
-            int section = -1;
-            std::optional<int> frame = std::nullopt;
-        };
-
-        struct Output {
-            Texture decoded{};
-            Texture regularized{};
-            Texture classified{};
-        };
-
-        struct Session {
-            NvOFObj ctx = nullptr;
-            uint32_t w = 0u;
-            uint32_t h = 0u;
-            uint32_t grid_size = 1u;
-            std::array<Input, 2uz> inputs{};
-        };
-
-        friend class Renderer;
-        friend class Context;
-
-        uint32_t w = 0u, h = 0u;
-        Texture src_{};
-        Output output_{};
+    struct ID {
+        uint16_t w = 0u, h = 0u;
+        int32_t preset = 0;
     };
 
     struct Param {
-        int64_t id = 0;
-        int section = -1;
-        int frame = 0;
-        NV_OF_PERF_LEVEL preset = NV_OF_PERF_LEVEL_SLOW;
+        ID id{};
+        bool should_use_temporal_hints = false;
+        float scale = 1.0f;
         float amount = 1.0f;
         float phase = 0.0f;
         int32_t sample_limit = 1;
@@ -116,10 +82,7 @@ class Renderer {
         Context(Context&&) = delete;
         Context& operator=(Context&&) = delete;
 
-        [[nodiscard]] std::expected<Flow, std::error_code> ComputeFlow(ID3D11Texture2D* src, ID3D11Texture2D* depth,
-                                                                       const Param& param) const;
-        [[nodiscard]] std::error_code Draw(const Flow& flow, const Param& param) const;
-        [[nodiscard]] std::error_code Debug(const Flow& flow, const Param& param) const;
+        [[nodiscard]] std::error_code Draw(const Source& src, const Param& param) const;
 
       private:
         friend class Renderer;
@@ -151,28 +114,32 @@ class Renderer {
 
         ctx_->OMSetBlendState(nullptr, nullptr, 0xffffffffu);
         ctx_->OMSetDepthStencilState(dss_.Get(), 0u);
+
         ctx_->RSSetState(nullptr);
+
         ctx_->GSSetShader(nullptr, nullptr, 0u);
+
+        ctx_->IASetInputLayout(nullptr);
+        ctx_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+        ctx_->VSSetShader(vs_.Get(), nullptr, 0u);
 
         Context ctx(*this, dst);
         return std::forward<F>(f)(ctx);
     }
 
     void Reset();
-    void Reset(int64_t id);
 
   private:
+    template <typename T>
+    using ComPtr = Microsoft::WRL::ComPtr<T>;
+
     struct alignas(16) FlowParam {
         uint32_t resolution[2uz] = {0u, 0u};
         uint32_t grid_size = 1u;
         float flow_scale = 1.0f;
-    };
-
-    struct alignas(16) LayerPropagationParam {
-        float resolution[2uz] = {0.0f, 0.0f};
         float shutter[2uz] = {0.0f, 0.0f};
-        int32_t step = 1;
-        int32_t padding[3uz] = {0, 0, 0};
+        int32_t propagation_step = 0;
     };
 
     struct alignas(16) DrawParam {
@@ -183,22 +150,50 @@ class Renderer {
         int32_t sample_limit = 1;
     };
 
-    struct alignas(16) DebugParam {
-        float texel[2uz] = {1.0f, 1.0f};
-        int32_t mode = 0;
-        float scale = 1.0f;
+    struct Session {
+        struct Input {
+            NvOFBufferObj buf = nullptr;
+            ComPtr<ID3D11RenderTargetView> rtv = nullptr;
+        };
+
+        struct Output {
+            NvOFBufferObj buf = nullptr;
+            ComPtr<ID3D11ShaderResourceView> srv = nullptr;
+        };
+
+        struct Resource {
+            ComPtr<ID3D11Texture2D> tex = nullptr;
+            ComPtr<ID3D11ShaderResourceView> srv = nullptr;
+            ComPtr<ID3D11RenderTargetView> rtv = nullptr;
+            ComPtr<ID3D11UnorderedAccessView> uav = nullptr;
+        };
+
+        NvOFObj ctx = nullptr;
+        uint32_t grid_size = 1u;
+
+        D3D11_VIEWPORT vp{};
+
+        std::array<Input, 2uz> inputs{};
+        std::array<Output, 2uz> outputs{};
+        std::array<Output, 2uz> costs{};
+        std::array<Resource, 3uz> resources{};
     };
 
     [[nodiscard]] std::error_code Acquire(ID3D11Texture2D* tex);
-    [[nodiscard]] std::expected<Flow::Session, std::error_code> CreateFlowSession(uint32_t w, uint32_t h,
-                                                                                  NV_OF_PERF_LEVEL level) const;
-    [[nodiscard]] std::expected<Flow::Output, std::error_code> CreateFlowOutput(
-        const std::array<ID3D11ShaderResourceView*, 4uz>& flows, ID3D11ShaderResourceView* src,
+
+    [[nodiscard]] std::expected<Session, std::error_code> CreateSession(const ID& id) const;
+
+    [[nodiscard]] std::expected<size_t, std::error_code> Regularize(const Session& session,
+                                                                     const FlowParam& param) const;
+    [[nodiscard]] std::expected<size_t, std::error_code> Propagate(
+        const Session& session, size_t regularized, ID3D11ShaderResourceView* src,
         ID3D11ShaderResourceView* depth, const FlowParam& param) const;
-    [[nodiscard]] std::expected<std::array<Texture, 2uz>, std::error_code> CreateLayerTiles(const Flow& flow,
-                                                                                            const Param& param) const;
-    [[nodiscard]] std::error_code ToABGR8(ID3D11RenderTargetView* dst, ID3D11ShaderResourceView* src,
-                                          const D3D11_VIEWPORT& vp) const;
+    void ToABGR8(ID3D11RenderTargetView* dst, ID3D11ShaderResourceView* src, const D3D11_VIEWPORT& vp) const;
+
+    [[nodiscard]] std::error_code Blur(ID3D11RenderTargetView* dst,
+                                       const std::array<ID3D11ShaderResourceView*, 3uz>& src, DrawParam param,
+                                       const D3D11_VIEWPORT& vp) const;
+
     void Release();
 
     std::mutex mutex_;
@@ -214,18 +209,16 @@ class Renderer {
     struct {
         ComPtr<ID3D11PixelShader> convert = nullptr;
         ComPtr<ID3D11PixelShader> decode_flow = nullptr;
-        ComPtr<ID3D11PixelShader> classify_layer = nullptr;
-        ComPtr<ID3D11PixelShader> reduce_layer = nullptr;
-        ComPtr<ID3D11PixelShader> propagate_layer = nullptr;
+        ComPtr<ID3D11PixelShader> propagate_init = nullptr;
+        ComPtr<ID3D11PixelShader> propagate = nullptr;
         ComPtr<ID3D11PixelShader> blur = nullptr;
-        ComPtr<ID3D11PixelShader> debug = nullptr;
     } ps_{};
     ComPtr<ID3D11SamplerState> smp_ = nullptr;
     ComPtr<ID3D11Buffer> cb_ = nullptr;
 
-    std::unordered_map<int64_t, Flow::Session> sessions_;
+    std::unordered_map<uint64_t, Session> sessions_;
 };
-}  // namespace blur::scene::direct3d
+}  // namespace blur::scene
 
 template <>
-struct std::is_error_code_enum<blur::scene::direct3d::Error> : true_type {};
+struct std::is_error_code_enum<blur::scene::Error> : true_type {};

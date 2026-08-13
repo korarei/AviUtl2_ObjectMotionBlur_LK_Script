@@ -25,7 +25,8 @@ namespace {
 namespace aul = blur::aviutl;
 namespace string = blur::string;
 namespace cache = blur::object::cache;
-namespace d3d = blur::object::direct3d;
+
+using Renderer = blur::object::Renderer;
 
 constexpr float kEpsilon = Eigen::NumTraits<float>::dummy_precision();
 
@@ -106,7 +107,7 @@ constexpr std::array<FILTER_ITEM_DATA<std::array<Record, 16uz>>*, 8uz> kRecords 
 }  // namespace internal
 }  // namespace properties
 
-d3d::Renderer renderer{};
+Renderer renderer{};
 cache::Store store{};
 
 [[nodiscard]] constexpr float ToRadians(float deg) noexcept {
@@ -224,7 +225,7 @@ cache::Store store{};
 
             if (ctx->edit->get_effect_track_value(handle, L"拡大率", point, &v)) {
                 if (v < 0.0) {
-                    aul::Logger::Warning(L"Negative scaling is not supported");
+                    aul::logger::Warning(L"Negative scaling is not supported");
                 }
 
                 xform.scale = Eigen::Vector2f::Constant(std::max(static_cast<float>(v) * 0.01f, kEpsilon));
@@ -264,7 +265,7 @@ cache::Store store{};
                 Eigen::Vector2f scale(base.sx * offset.scale.x(), base.sy * offset.scale.y());
 
                 if ((scale.array() < 0.0f).any()) {
-                    aul::Logger::Warning(L"Negative scaling is not supported");
+                    aul::logger::Warning(L"Negative scaling is not supported");
                 }
 
                 xform.scale = scale.cwiseMax(kEpsilon);
@@ -296,7 +297,7 @@ cache::Store store{};
 
         record.num = store.Get(ctx->object, record.transforms) ? ctx->object->num : 0;
     } else {
-        aul::Logger::Warning(L"Object index exceeds the cache limit");
+        aul::logger::Warning(L"Object index exceeds the cache limit");
     }
 
     const auto retrodict = [](auto&& value_at) {
@@ -501,7 +502,7 @@ cache::Store store{};
     return box;
 }
 
-void CreateSubFrameTransforms(const Object& object, int samples, std::vector<d3d::Renderer::Affine2D>& xforms) {
+void CreateSubFrameTransforms(const Object& object, int samples, std::vector<Renderer::Affine2D>& xforms) {
     const auto& state = object.state;
 
     const float step = 1.0f / static_cast<float>(samples - 1);
@@ -550,7 +551,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         return true;
     }
 
-    const int32_t limit = aul::Context::CurrentSessionState() == aul::Context::SessionState::kRendering
+    const int32_t limit = aul::context::CurrentEditorState() == aul::context::EditorState::kExporting
                               ? static_cast<int32_t>(props::sampling::render::sample_limit.value)
                               : static_cast<int32_t>(props::sampling::viewport::sample_limit.value);
 
@@ -576,7 +577,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         }
 
         if (!ctx->copy_image_resource(L"resource:source", nullptr)) {
-            aul::Logger::Error(L"Failed to copy image resource");
+            aul::logger::Error(L"Failed to copy image resource");
             return false;
         }
 
@@ -586,18 +587,18 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         auto* const src = ctx->get_image_resource_texture2d(L"resource:source");
 
         if (src == nullptr || dst == nullptr) {
-            aul::Logger::Error(L"Failed to get image resource");
+            aul::logger::Error(L"Failed to get image resource");
             return false;
         }
 
-        thread_local std::vector<d3d::Renderer::Affine2D> subframe_xforms;
+        thread_local std::vector<Renderer::Affine2D> subframe_xforms;
         CreateSubFrameTransforms(object, samples, subframe_xforms);
 
         const float mix = std::clamp(static_cast<float>(props::compositing::mix.value) * 0.01f, 0.0f, 1.0f) * 2.0f;
         const float falloff = std::max(static_cast<float>(props::compositing::falloff.value) * 0.01f, 0.0f);
         const float decay = std::pow(std::max(1.0f - falloff, kEpsilon), 1.0f / static_cast<float>(samples - 1));
 
-        const d3d::Renderer::Param param{
+        const Renderer::Param param{
             .transform =
                 {
                     .row0 =
@@ -632,18 +633,18 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             .samples = samples,
         };
 
-        const auto ec = renderer.Render(dst, [src, &param](d3d::Renderer::Context& ctx) -> std::error_code {
+        const auto ec = renderer.Render(dst, [src, &param](Renderer::Context& ctx) -> std::error_code {
             return ctx.Draw(src, subframe_xforms, param);
         });
 
         if (ec != std::error_code{}) {
-            aul::Logger::Error(string::ToWString(string::AsUTF8(ec.message())));
+            aul::logger::Error(string::ToWString(string::AsUTF8(ec.message())));
             return false;
         }
     }
 
     if (props::should_print_diagnostics.value) {
-        aul::Logger::Log(
+        aul::logger::Log(
             std::format(L"\n"
                         L"Effect ID       : {}\n"
                         L"Index           : {}\n"

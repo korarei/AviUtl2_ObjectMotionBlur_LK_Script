@@ -116,7 +116,7 @@ void Store::Set(const FILTER_PROC_VIDEO* ctx) {
                 prev.transform.rotation = std::lerp(curr.transform.rotation, prev.transform.rotation, t);
 
                 if (d < 0) {
-                    aul::Logger::Warning(L"Reverse playback is not supported");
+                    aul::logger::Warning(L"Reverse playback is not supported");
                 }
             }
         }

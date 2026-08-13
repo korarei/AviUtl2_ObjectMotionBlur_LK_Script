@@ -21,14 +21,14 @@ set(VERTEX_SHADERS
 set(PIXEL_SHADERS
     "${CMAKE_CURRENT_SOURCE_DIR}/intern/shaders/convert.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/intern/shaders/decode_flow.hlsl"
-    "${CMAKE_CURRENT_SOURCE_DIR}/intern/shaders/classify_layer.hlsl"
-    "${CMAKE_CURRENT_SOURCE_DIR}/intern/shaders/reduce_layer.hlsl"
-    "${CMAKE_CURRENT_SOURCE_DIR}/intern/shaders/propagate_layer.hlsl"
+    "${CMAKE_CURRENT_SOURCE_DIR}/intern/shaders/propagate_init.hlsl"
+    "${CMAKE_CURRENT_SOURCE_DIR}/intern/shaders/propagate.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/intern/shaders/blur.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/intern/shaders/debug.hlsl"
 )
 
 set(COMPUTE_SHADERS
+    "${CMAKE_CURRENT_SOURCE_DIR}/intern/shaders/regularize_init.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/intern/shaders/regularize_flow.hlsl"
 )
 
