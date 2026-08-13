@@ -19,14 +19,13 @@
 #include <intern/string.hpp>
 
 #include "cache.hpp"
-#include "direct3d.hpp"
+#include "render.hpp"
 
 namespace {
 namespace aul = blur::aviutl;
 namespace string = blur::string;
 namespace cache = blur::object::cache;
-
-using Renderer = blur::object::Renderer;
+namespace renderer = blur::object::renderer;
 
 constexpr float kEpsilon = Eigen::NumTraits<float>::dummy_precision();
 
@@ -107,7 +106,6 @@ constexpr std::array<FILTER_ITEM_DATA<std::array<Record, 16uz>>*, 8uz> kRecords 
 }  // namespace internal
 }  // namespace properties
 
-Renderer renderer{};
 cache::Store store{};
 
 [[nodiscard]] constexpr float ToRadians(float deg) noexcept {
@@ -502,11 +500,11 @@ cache::Store store{};
     return box;
 }
 
-void CreateSubFrameTransforms(const Object& object, int samples, std::vector<Renderer::Affine2D>& xforms) {
+void CreateSubFrameTransforms(const Object& object, int samples, std::vector<renderer::Float2x3>& subframe_xforms) {
     const auto& state = object.state;
 
     const float step = 1.0f / static_cast<float>(samples - 1);
-    xforms.resize(samples);
+    subframe_xforms.resize(samples);
 
     for (int i = 0; i < samples; ++i) {
         const float t = step * static_cast<float>(i);
@@ -525,10 +523,10 @@ void CreateSubFrameTransforms(const Object& object, int samples, std::vector<Ren
 
         subframe_xform = Eigen::Translation2f(lerp(state.start.pivot, state.end.pivot, t)) * subframe_xform;
 
-        xforms[i] = {
-            .row0 = {subframe_xform(0, 0), subframe_xform(0, 1), subframe_xform(0, 2)},
-            .row1 = {subframe_xform(1, 0), subframe_xform(1, 1), subframe_xform(1, 2)},
-        };
+        subframe_xforms[i] = {{
+            {subframe_xform(0, 0), subframe_xform(0, 1), subframe_xform(0, 2)},
+            {subframe_xform(1, 0), subframe_xform(1, 1), subframe_xform(1, 2)},
+        }};
     }
 }
 
@@ -551,11 +549,11 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         return true;
     }
 
-    const int32_t limit = aul::context::CurrentEditorState() == aul::context::EditorState::kExporting
+    const int32_t limit = aul::context::GetEditorState() == aul::context::EditorState::kExporting
                               ? static_cast<int32_t>(props::sampling::render::sample_limit.value)
                               : static_cast<int32_t>(props::sampling::viewport::sample_limit.value);
 
-    const int32_t samples = std::min(limit, required_samples);
+    const int32_t samples = std::min({limit, required_samples, 65536});
 
     if (samples < 2) {
         return true;
@@ -577,7 +575,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         }
 
         if (!ctx->copy_image_resource(L"resource:source", nullptr)) {
-            aul::logger::Error(L"Failed to copy image resource");
+            aul::logger::Error(L"Failed to copy image 'object' to 'resource:source'");
             return false;
         }
 
@@ -587,32 +585,32 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         auto* const src = ctx->get_image_resource_texture2d(L"resource:source");
 
         if (src == nullptr || dst == nullptr) {
-            aul::logger::Error(L"Failed to get image resource");
+            aul::logger::Error(L"Failed to get 'ID3D11Texture2D' pointers");
             return false;
         }
 
-        thread_local std::vector<Renderer::Affine2D> subframe_xforms;
+        thread_local std::vector<renderer::Float2x3> subframe_xforms;
         CreateSubFrameTransforms(object, samples, subframe_xforms);
 
         const float mix = std::clamp(static_cast<float>(props::compositing::mix.value) * 0.01f, 0.0f, 1.0f) * 2.0f;
         const float falloff = std::max(static_cast<float>(props::compositing::falloff.value) * 0.01f, 0.0f);
         const float decay = std::pow(std::max(1.0f - falloff, kEpsilon), 1.0f / static_cast<float>(samples - 1));
 
-        const Renderer::Param param{
+        const renderer::Param param{
             .transform =
                 {
-                    .row0 =
-                        {
-                            object.transform(0, 0),
-                            object.transform(0, 1),
-                            object.transform(0, 2),
-                        },
-                    .row1 =
-                        {
-                            object.transform(1, 0),
-                            object.transform(1, 1),
-                            object.transform(1, 2),
-                        },
+
+                    {
+                        object.transform(0, 0),
+                        object.transform(0, 1),
+                        object.transform(0, 2),
+                    },
+
+                    {
+                        object.transform(1, 0),
+                        object.transform(1, 1),
+                        object.transform(1, 2),
+                    },
                 },
             .origin =
                 {
@@ -633,17 +631,12 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             .samples = samples,
         };
 
-        const auto ec = renderer.Render(dst, [src, &param](Renderer::Context& ctx) -> std::error_code {
+        const auto ec = renderer::Render(dst, [src, &param](const renderer::Context& ctx) -> std::error_code {
             return ctx.Draw(src, subframe_xforms, param);
         });
 
         if (ec != std::error_code{}) {
-            if (const auto msg = string::ToWString(string::AsUTF8(ec.message())); msg.has_value()) {
-                aul::logger::Error(*msg);
-            } else {
-                aul::logger::Error(L"Unknown error occurred");
-            }
-
+            aul::logger::Error(ec.message());
             return false;
         }
     }
@@ -706,13 +699,13 @@ void Register(HOST_APP_TABLE* host) {
     host->register_filter_plugin(&desc);
 
     host->register_clear_cache_handler([]([[maybe_unused]] EDIT_SECTION* edit) {
-        renderer.Reset();
+        renderer::Reset();
         store.Reset();
     });
 }
 
 void Unregister() {
-    renderer.Reset();
+    renderer::Reset();
     store.Reset();
 }
 }  // namespace blur::object

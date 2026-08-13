@@ -47,6 +47,41 @@ namespace blur::string {
 #endif
 }
 
+// 非推奨
+[[nodiscard]] inline std::expected<std::wstring, std::error_code> ToWString(std::string_view input) {
+#ifdef _WIN32
+    if (input.empty()) {
+        return {};
+    }
+
+    if (input.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return std::unexpected(std::make_error_code(std::errc::value_too_large));
+    }
+
+    const char* input_data = input.data();
+    const int input_size = static_cast<int>(input.size());
+
+    const int output_size = MultiByteToWideChar(CP_ACP, 0, input_data, input_size, nullptr, 0);
+
+    if (output_size == 0) {
+        return std::unexpected(std::error_code{static_cast<int>(GetLastError()), std::system_category()});
+    }
+
+    std::wstring output(output_size, L'\0');
+    const int written_size = MultiByteToWideChar(CP_ACP, 0, input_data, input_size, output.data(), output_size);
+
+    if (written_size == 0) {
+        return std::unexpected(std::error_code{static_cast<int>(GetLastError()), std::system_category()});
+    }
+
+    output.resize(written_size);  // 一応
+
+    return output;
+#else
+    return std::filesystem::path(input).wstring();
+#endif
+}
+
 [[nodiscard]] inline std::expected<std::u8string, std::error_code> ToUTF8(std::wstring_view input) {
 #ifdef _WIN32
     if (input.empty()) {

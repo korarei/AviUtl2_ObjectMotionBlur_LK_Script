@@ -6,8 +6,8 @@ find_package(Eigen3 CONFIG REQUIRED)
 
 add_library(${PROJECT_NAME} OBJECT
     intern/cache.cpp
-    intern/direct3d.cpp
     intern/object.cpp
+    intern/render.cpp
 )
 
 include(${CMAKE_SCRIPTS}/CompileShaders.cmake)

@@ -202,7 +202,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 
     const float amount = std::max(angle / 360.0f, 0.0f);
 
-    const int32_t sample_limit = aul::context::CurrentEditorState() == aul::context::EditorState::kExporting
+    const int32_t sample_limit = aul::context::GetEditorState() == aul::context::EditorState::kExporting
                                      ? static_cast<int32_t>(props::sampling::render::sample_limit.value)
                                      : static_cast<int32_t>(props::sampling::viewport::sample_limit.value);
 
