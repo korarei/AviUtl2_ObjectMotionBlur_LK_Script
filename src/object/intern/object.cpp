@@ -638,7 +638,12 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         });
 
         if (ec != std::error_code{}) {
-            aul::logger::Error(string::ToWString(string::AsUTF8(ec.message())));
+            if (const auto msg = string::ToWString(string::AsUTF8(ec.message())); msg.has_value()) {
+                aul::logger::Error(*msg);
+            } else {
+                aul::logger::Error(L"Unknown error occurred");
+            }
+
             return false;
         }
     }

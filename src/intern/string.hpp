@@ -7,15 +7,20 @@
 #endif
 
 #include <charconv>
-#include <optional>
+#include <expected>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace blur::string {
-[[nodiscard]] inline std::wstring ToWString(std::u8string_view input) {
+[[nodiscard]] inline std::expected<std::wstring, std::error_code> ToWString(std::u8string_view input) {
 #ifdef _WIN32
     if (input.empty()) {
         return {};
+    }
+
+    if (input.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return std::unexpected(std::make_error_code(std::errc::value_too_large));
     }
 
     const char* input_data = reinterpret_cast<const char*>(input.data());
@@ -24,11 +29,17 @@ namespace blur::string {
     const int output_size = MultiByteToWideChar(CP_UTF8, 0, input_data, input_size, nullptr, 0);
 
     if (output_size == 0) {
-        return {};
+        return std::unexpected(std::error_code{static_cast<int>(GetLastError()), std::system_category()});
     }
 
     std::wstring output(output_size, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, input_data, input_size, output.data(), output_size);
+    const int written_size = MultiByteToWideChar(CP_UTF8, 0, input_data, input_size, output.data(), output_size);
+
+    if (written_size == 0) {
+        return std::unexpected(std::error_code{static_cast<int>(GetLastError()), std::system_category()});
+    }
+
+    output.resize(written_size);  // 一応
 
     return output;
 #else
@@ -36,10 +47,14 @@ namespace blur::string {
 #endif
 }
 
-[[nodiscard]] inline std::u8string ToUTF8(std::wstring_view input) {
+[[nodiscard]] inline std::expected<std::u8string, std::error_code> ToUTF8(std::wstring_view input) {
 #ifdef _WIN32
     if (input.empty()) {
         return {};
+    }
+
+    if (input.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return std::unexpected(std::make_error_code(std::errc::value_too_large));
     }
 
     const wchar_t* input_data = input.data();
@@ -48,14 +63,18 @@ namespace blur::string {
     const int output_size = WideCharToMultiByte(CP_UTF8, 0, input_data, input_size, nullptr, 0, nullptr, nullptr);
 
     if (output_size == 0) {
-        return {};
+        return std::unexpected(std::error_code{static_cast<int>(GetLastError()), std::system_category()});
     }
 
     std::u8string output(output_size, u8'\0');
+    const int written_size = WideCharToMultiByte(CP_UTF8, 0, input_data, input_size,
+                                                 reinterpret_cast<char*>(output.data()), output_size, nullptr, nullptr);
 
-    char* output_data = reinterpret_cast<char*>(output.data());
+    if (written_size == 0) {
+        return std::unexpected(std::error_code{static_cast<int>(GetLastError()), std::system_category()});
+    }
 
-    WideCharToMultiByte(CP_UTF8, 0, input_data, input_size, output_data, output_size, nullptr, nullptr);
+    output.resize(written_size);  // 一応
 
     return output;
 #else
@@ -72,24 +91,50 @@ namespace blur::string {
 }
 
 template <std::floating_point T>
-[[nodiscard]] inline std::optional<T> ToNumber(std::string_view input) noexcept {
+[[nodiscard]] inline std::expected<T, std::error_code> ToNumber(std::string_view input) noexcept {
     const char* first = input.data();
     const char* last = first + input.size();
 
     T output{};
     const auto [ptr, ec] = std::from_chars(first, last, output);
 
-    return ptr == last && ec == std::errc{} ? std::optional{output} : std::nullopt;
+    if (ec != std::errc{}) {
+        return std::unexpected(std::make_error_code(ec));
+    }
+
+    if (ptr != last) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
+
+    return output;
+}
+
+template <std::floating_point T>
+[[nodiscard]] inline std::expected<T, std::error_code> ToNumber(std::u8string_view input) noexcept {
+    return ToNumber<T>(AsString(input));
 }
 
 template <std::integral T>
-[[nodiscard]] inline std::optional<T> ToNumber(std::string_view input, int base = 10) noexcept {
+[[nodiscard]] inline std::expected<T, std::error_code> ToNumber(std::string_view input, int base = 10) noexcept {
     const char* first = input.data();
     const char* last = first + input.size();
 
     T output{};
     const auto [ptr, ec] = std::from_chars(first, last, output, base);
 
-    return ptr == last && ec == std::errc{} ? std::optional{output} : std::nullopt;
+    if (ec != std::errc{}) {
+        return std::unexpected(std::make_error_code(ec));
+    }
+
+    if (ptr != last) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
+
+    return output;
+}
+
+template <std::integral T>
+[[nodiscard]] inline std::expected<T, std::error_code> ToNumber(std::u8string_view input, int base = 10) noexcept {
+    return ToNumber<T>(AsString(input), base);
 }
 }  // namespace blur::string
