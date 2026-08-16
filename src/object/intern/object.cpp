@@ -18,26 +18,25 @@
 #include <intern/aviutl/aviutl.hpp>
 #include <intern/string.hpp>
 
-#include "cache.hpp"
+#include "instance.hpp"
 #include "render.hpp"
+#include "transform.hpp"
 
 namespace {
 namespace aul = blur::aviutl;
 namespace string = blur::string;
-namespace cache = blur::object::cache;
 namespace renderer = blur::object::renderer;
+
+using FrameSample = blur::object::FrameSample;
+using Instance = blur::object::Instance;
+using Sample = blur::object::Sample;
+using Transform = blur::object::Transform;
 
 constexpr float kEpsilon = Eigen::NumTraits<float>::dummy_precision();
 
 struct Object {
-    struct Transform {
-        Eigen::Vector2f position = Eigen::Vector2f::Zero();
-        Eigen::Vector2f scale = Eigen::Vector2f::Ones();
-        float rotation = 0.0f;
-    };
-
     struct Snapshot {
-        Eigen::Affine2f world_transform = Eigen::Affine2f::Identity();
+        Eigen::Affine2f transform = Eigen::Affine2f::Identity();
         Eigen::Vector2f pivot = Eigen::Vector2f::Zero();
         std::vector<Transform> transforms;
     };
@@ -106,8 +105,6 @@ constexpr std::array<FILTER_ITEM_DATA<std::array<Record, 16uz>>*, 8uz> kRecords 
 }  // namespace internal
 }  // namespace properties
 
-cache::Store store{};
-
 [[nodiscard]] constexpr float ToRadians(float deg) noexcept {
     constexpr float f = std::numbers::pi_v<float> / 180.0f;
     return deg * f;
@@ -145,26 +142,32 @@ cache::Store store{};
                 const auto* const alias = ctx->edit->get_object_alias(object_handle);
 
                 if (alias == nullptr) {
+                    aul::logger::Warning(L"Failed to get object alias");
                     continue;
                 }
 
-                const std::string_view object{alias};
+                const std::u8string_view object{string::AsUTF8(alias)};
 
-                const auto meta_st = object.find("[Object]");
-                const auto empty_st = object.find("[Object.0]");
+                const auto meta_st = object.find(u8"[Object]");
+                const auto empty_st = object.find(u8"[Object.0]");
 
                 if (meta_st == std::string_view::npos || empty_st == std::string_view::npos) {
                     continue;
                 }
 
-                const auto empty = object.substr(empty_st, object.find("[Object.1]") - empty_st);
+                const auto empty = object.substr(empty_st, object.find(u8"[Object.1]") - empty_st);
 
-                if (auto st = empty.find("\n対象レイヤー数="); st != std::string_view::npos) {
-                    st += sizeof("\n対象レイヤー数=") - 1uz;
+                if (auto st = empty.find(u8"\n対象レイヤー数="); st != std::string_view::npos) {
+                    st += sizeof(u8"\n対象レイヤー数=") - 1uz;
 
-                    const auto range = string::ToNumber<int>(empty.substr(st, empty.find_first_of("\r\n", st) - st));
+                    const auto range = string::ToNumber<int>(empty.substr(st, empty.find_first_of(u8"\r\n", st) - st));
 
-                    if (!range.has_value() || (*range != 0 && *range < layer - i)) {
+                    if (!range.has_value()) {
+                        aul::logger::Warning(range.error().message());
+                        continue;
+                    }
+
+                    if (*range != 0 && *range < layer - i) {
                         continue;
                     }
 
@@ -173,10 +176,10 @@ cache::Store store{};
 
                     const auto meta = object.substr(meta_st, empty_st - meta_st);
 
-                    if (st = meta.find("\ngroup.control="); st != std::string_view::npos) {
-                        st += sizeof("\ngroup.control=") - 1uz;
+                    if (st = meta.find(u8"\ngroup.control="); st != std::string_view::npos) {
+                        st += sizeof(u8"\ngroup.control=") - 1uz;
 
-                        if (meta.substr(st, meta.find_first_of("\r\n", st) - st) == "0") {
+                        if (meta.substr(st, meta.find_first_of(u8"\r\n", st) - st) == u8"0") {
                             break;
                         }
                     }
@@ -188,20 +191,14 @@ cache::Store store{};
     return handles;
 }
 
-[[nodiscard]] std::vector<Object::Transform> GetEmpties(int phase, const FILTER_PROC_VIDEO* ctx) {
+[[nodiscard]] std::vector<Transform> GetEmpties(int frame, const FILTER_PROC_VIDEO* ctx) {
     if (ctx->object->layer == 0) {
-        return {};
-    }
-
-    const int frame = ctx->object->frame_s + ctx->object->frame + phase;
-
-    if (frame < 0) {
         return {};
     }
 
     const auto handles = GetEmptyHandles(frame, ctx);
 
-    std::vector<Object::Transform> empties(handles.size());
+    std::vector<Transform> empties(handles.size());
 
     {
         const double point = static_cast<double>(frame);
@@ -209,7 +206,7 @@ cache::Store store{};
         for (size_t i = 0; i < handles.size(); ++i) {
             auto* const handle = handles[handles.size() - 1uz - i];
 
-            Object::Transform xform{};
+            Transform xform{};
 
             double v;
 
@@ -240,38 +237,44 @@ cache::Store store{};
     return empties;
 }
 
-[[nodiscard]] Object::Snapshot GetObjectTransforms(int phase, const FILTER_PROC_VIDEO* ctx) {
-    Object::Snapshot snapshot{};
+[[nodiscard]] Object::Snapshot GetObjectTransforms(const Sample& smp, const FILTER_PROC_VIDEO* ctx) {
+    auto xforms = GetEmpties(smp.frame, ctx);
+    xforms.push_back(smp.transform);
 
-    snapshot.transforms = GetEmpties(phase, ctx);
+    return Object::Snapshot{
+        .pivot = smp.pivot,
+        .transforms = std::move(xforms),
+    };
+}
 
-    snapshot.transforms.emplace_back();
-    auto& xform = snapshot.transforms.back();
+[[nodiscard]] FrameSample GetFrameSample(const FILTER_PROC_VIDEO* ctx) {
+    OBJECT_IMAGE_PARAM base;
 
-    {
-        const double spf = static_cast<double>(ctx->scene->scale) / ctx->scene->rate;
-        OBJECT_IMAGE_PARAM base;
-
-        if (ctx->get_output_image_param(nullptr, phase * spf, &base, sizeof(base))) {
-            const auto& offset = store.Get(ctx->object, phase);
-
-            snapshot.pivot = Eigen::Map<const Eigen::Vector2f>(&base.cx) + offset.pivot;
-            xform.position = Eigen::Map<const Eigen::Vector2f>(&base.x) + offset.position;
-            xform.rotation = ToRadians(base.rz + offset.rotation);
-
-            {
-                Eigen::Vector2f scale(base.sx * offset.scale.x(), base.sy * offset.scale.y());
-
-                if ((scale.array() < 0.0f).any()) {
-                    aul::logger::Warning(L"Negative scaling is not supported");
-                }
-
-                xform.scale = scale.cwiseMax(kEpsilon);
-            }
-        }
+    if (!ctx->get_output_image_param(nullptr, 0.0, &base, sizeof(base))) {
+        return {};
     }
 
-    return snapshot;
+    Eigen::Vector2f scale(base.sx * ctx->param->sx, base.sy * ctx->param->sy);
+
+    if ((scale.array() < 0.0f).any()) {
+        aul::logger::Warning(L"Negative scaling is not supported");
+    }
+
+    Sample smp{
+        .pivot = Eigen::Vector2f(base.cx + ctx->param->cx, base.cy + ctx->param->cy),
+        .transform =
+            {
+                .position = Eigen::Vector2f(base.x + ctx->param->x, base.y + ctx->param->y),
+                .scale = scale.cwiseMax(kEpsilon),
+                .rotation = ToRadians(base.rz + ctx->param->rz),
+            },
+        .frame = std::clamp(ctx->object->frame_s + ctx->object->frame, ctx->object->frame_s, ctx->object->frame_e),
+    };
+
+    return {
+        .frame = ctx->object->frame,
+        .sample = std::move(smp),
+    };
 }
 
 // 0フレーム以外呼び出し禁止
@@ -358,6 +361,72 @@ cache::Store store{};
     return snapshot;
 }
 
+[[nodiscard]] const Instance& UpdateCache(const FILTER_PROC_VIDEO* ctx) {
+    auto* const instance = static_cast<Instance*>(ctx->userdata);
+
+    if (instance->records.size() != static_cast<size_t>(ctx->object->num)) {
+        instance->records.assign(ctx->object->num, std::array<Sample, 4uz>{});
+    }
+
+    auto& samples = instance->records[ctx->object->index];
+
+    auto& prev = samples[0uz];
+    auto& curr = samples[1uz];
+
+    if (instance->frames[1uz].has_value() && *instance->frames[1uz] != ctx->object->frame) {
+        prev = curr;
+    }
+
+    curr = {
+        .offset =
+            {
+                .pivot = Eigen::Map<const Eigen::Vector2f>(&ctx->param->cx),
+                .position = Eigen::Map<const Eigen::Vector2f>(&ctx->param->x),
+                .scale = Eigen::Map<const Eigen::Vector2f>(&ctx->param->sx),
+                .rotation = ctx->param->rz,
+            },
+        .frame = ctx->object->frame,
+    };
+
+    instance->frames[1uz] = ctx->object->frame;
+
+    if (ctx->object->frame > 0 && ctx->object->frame < static_cast<int>(samples.size() - 1uz)) {
+        samples[static_cast<size_t>(ctx->object->frame) + 1uz] = curr;
+    }
+
+    if (ctx->object->frame != 0) {
+        if (instance->frames[0uz].has_value()) {
+            if (const int df = ctx->object->frame - *instance->frames[0uz]; df != 0 && df != 1) {
+                const float t = 1.0f / static_cast<float>(df);
+
+                const auto lerp = [t](const Eigen::Vector2f& a, const Eigen::Vector2f& b) -> Eigen::Vector2f {
+                    return a + (b - a) * t;
+                };
+
+                prev.frame =
+                    std::clamp(static_cast<int>(std::lerp(static_cast<double>(curr.frame),
+                                                          static_cast<double>(prev.frame), static_cast<double>(t))),
+                               0, ctx->object->frame_total);
+
+                prev.offset.pivot = lerp(curr.offset.pivot, prev.offset.pivot);
+                prev.offset.position = lerp(curr.offset.position, prev.offset.position);
+                prev.offset.scale = lerp(curr.offset.scale, prev.offset.scale).cwiseMax(kEpsilon);
+                prev.offset.rotation = std::lerp(curr.offset.rotation, prev.offset.rotation, t);
+
+                instance->frames[0uz] = ctx->object->frame - 1;
+
+                if (df < 0) {
+                    aul::logger::Warning(L"Reverse playback is not supported");
+                }
+            }
+        }
+    } else {
+        instance->frames[0uz] = std::nullopt;
+    }
+
+    return *instance;
+}
+
 [[nodiscard]] Object ResolveObject(const FILTER_PROC_VIDEO* ctx) {
     namespace props = properties;
 
@@ -368,14 +437,27 @@ cache::Store store{};
     Object object;
     auto& state = object.state;
 
-    store.Set(ctx);
+    {
+        const auto& instance = UpdateCache(ctx);
 
-    state.start = GetObjectTransforms(0, ctx);
+        const auto& samples = instance.records[ctx->object->index];
 
-    if (ctx->object->frame == 0) {
-        state.end = Extrapolate(state.start, ctx);
-    } else {
-        state.end = GetObjectTransforms(-1, ctx);
+        state.start = GetObjectTransforms(samples[1uz], ctx);
+
+        if (ctx->object->frame == 0) {
+            state.end = Extrapolate(state.start, ctx);
+        } else {
+            if (samples[0uz].frame.has_value()) {
+                state.end = GetObjectTransforms(samples[0uz], ctx);
+            } else {
+                aul::logger::Warning(L"No cached frame available");
+
+                auto smp = samples[1uz];
+                smp.frame = std::max(*smp.frame - 1, 0);
+
+                state.end = GetObjectTransforms(smp, ctx);
+            }
+        }
     }
 
     object.dimensions = Eigen::Vector2i(ctx->object->width, ctx->object->height).cast<float>();
@@ -393,9 +475,9 @@ cache::Store store{};
         const auto n = std::ssize(state.start.transforms) - std::ssize(state.end.transforms);
 
         if (n > 0) {
-            state.end.transforms.insert(state.end.transforms.begin(), n, Object::Transform{});
+            state.end.transforms.insert(state.end.transforms.begin(), n, Transform{});
         } else {
-            state.start.transforms.insert(state.start.transforms.begin(), -n, Object::Transform{});
+            state.start.transforms.insert(state.start.transforms.begin(), -n, Transform{});
         }
 
         state.depth = state.start.transforms.size();
@@ -435,11 +517,11 @@ cache::Store store{};
             end.rotation += delta;
         }
 
-        state.start.world_transform = state.start.world_transform * Eigen::Translation2f(start.position) *
-                                      Eigen::Rotation2Df(start.rotation) * Eigen::Scaling(start.scale);
+        state.start.transform = state.start.transform * Eigen::Translation2f(start.position) *
+                                Eigen::Rotation2Df(start.rotation) * Eigen::Scaling(start.scale);
 
-        state.end.world_transform = state.end.world_transform * Eigen::Translation2f(end.position) *
-                                    Eigen::Rotation2Df(end.rotation) * Eigen::Scaling(end.scale);
+        state.end.transform = state.end.transform * Eigen::Translation2f(end.position) *
+                              Eigen::Rotation2Df(end.rotation) * Eigen::Scaling(end.scale);
     }
 
     object.transform = object.transform * pivot;
@@ -450,7 +532,7 @@ cache::Store store{};
 [[nodiscard]] int ComputeSamples(const Object& object) {
     const auto& state = object.state;
 
-    const auto start_to_end = state.end.world_transform.inverse() * state.start.world_transform;
+    const auto start_to_end = state.end.transform.inverse() * state.start.transform;
     float samples = 0.0f;
 
     for (int i = 0; i < 4; ++i) {
@@ -532,6 +614,16 @@ void CreateSubFrameTransforms(const Object& object, int samples, std::vector<ren
 
 bool Apply(FILTER_PROC_VIDEO* ctx) {
     namespace props = properties;
+
+    if (ctx->object->index < 0 || ctx->object->index >= ctx->object->num) {
+        aul::logger::Error(L"Invalid object index");
+        return false;
+    }
+
+    if (ctx->object->frame < 0 || ctx->object->frame >= ctx->object->frame_total) {
+        aul::logger::Error(L"Invalid object frame");
+        return false;
+    }
 
     if (ctx->object->width <= 0 || ctx->object->height <= 0) {
         return false;
@@ -654,6 +746,10 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
     return true;
 }
 
+void* Init([[maybe_unused]] int64_t id) { return new Instance{}; }
+
+void Deinit([[maybe_unused]] int64_t id, void* instance) { delete static_cast<Instance*>(instance); }
+
 constinit void* props[] = {
     &properties::shutter::name,
     &properties::shutter::angle,
@@ -698,14 +794,8 @@ namespace blur::object {
 void Register(HOST_APP_TABLE* host) {
     host->register_filter_plugin(&desc);
 
-    host->register_clear_cache_handler([]([[maybe_unused]] EDIT_SECTION* edit) {
-        renderer::Reset();
-        store.Reset();
-    });
+    host->register_clear_cache_handler([]([[maybe_unused]] EDIT_SECTION* edit) { renderer::Reset(); });
 }
 
-void Unregister() {
-    renderer::Reset();
-    store.Reset();
-}
+void Unregister() { renderer::Reset(); }
 }  // namespace blur::object

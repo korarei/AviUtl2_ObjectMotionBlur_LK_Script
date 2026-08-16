@@ -239,6 +239,10 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
     return true;
 }
 
+void* Init([[maybe_unused]] int64_t id) { return new Instance{}; }
+
+void Deinit([[maybe_unused]] int64_t id, void* instance) { delete static_cast<Instance*>(instance); }
+
 constinit void* props[] = {
     &properties::shutter::name,
     &properties::shutter::angle,
@@ -258,10 +262,6 @@ constinit void* props[] = {
     &properties::view::control,
     nullptr,
 };
-
-void* Init([[maybe_unused]] int64_t id) { return new Instance{}; }
-
-void Deinit([[maybe_unused]] int64_t id, void* instance) { delete static_cast<Instance*>(instance); }
 
 constinit FILTER_PLUGIN_TABLE desc{
     .flag = FILTER_PLUGIN_TABLE::FLAG_VIDEO | FILTER_PLUGIN_TABLE::FLAG_FILTER | FILTER_PLUGIN_TABLE::FLAG_USERDATA,

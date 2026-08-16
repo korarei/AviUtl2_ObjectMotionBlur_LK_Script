@@ -16,6 +16,8 @@ struct Image {
     std::vector<PIXEL_RGBA> data;
 };
 
+static_assert(sizeof(PIXEL_RGBA) == sizeof(uint32_t));
+
 struct Instance {
     int section = -1;
     int frame = 0;
