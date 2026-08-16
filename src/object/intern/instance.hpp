@@ -15,12 +15,13 @@ struct Sample {
     int frame = 0;
 };
 
-struct FrameSample {
+struct FrameMapping {
     int frame = 0;
     Sample sample{};
 };
 
 struct Instance {
-    std::vector<std::array<std::optional<FrameSample>, 4uz>> frames;
+    std::vector<std::array<std::optional<FrameMapping>, 4uz>> mappings;
+    bool is_restored = false;
 };
 }  // namespace blur::object

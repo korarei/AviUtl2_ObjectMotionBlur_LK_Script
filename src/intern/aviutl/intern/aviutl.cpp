@@ -8,7 +8,7 @@ namespace {
 LOG_HANDLE* handle = nullptr;
 }
 
-void Init(LOG_HANDLE* handle) { logger::handle = handle; }
+void Init(LOG_HANDLE* log) { handle = log; }
 
 void Log(const std::wstring& msg) { handle->log(handle, msg.c_str()); }
 
@@ -106,7 +106,7 @@ namespace {
 EDIT_HANDLE* handle = nullptr;
 }
 
-void Init(EDIT_HANDLE* handle) { context::handle = handle; }
+void Init(EDIT_HANDLE* ctx) { context::handle = ctx; }
 
 EditorState GetEditorState() {
     switch (handle->get_edit_state()) {

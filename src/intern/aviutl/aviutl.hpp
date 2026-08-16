@@ -12,7 +12,7 @@
 
 namespace blur::aviutl {
 namespace logger {
-void Init(LOG_HANDLE* handle);
+void Init(LOG_HANDLE* log);
 
 void Log(const std::wstring& msg);
 void Log(std::string_view msg);
@@ -42,7 +42,7 @@ enum class EditorState : uint8_t {
     kExporting,
 };
 
-void Init(EDIT_HANDLE* handle);
+void Init(EDIT_HANDLE* ctx);
 
 [[nodiscard]] EditorState GetEditorState();
 }  // namespace context
