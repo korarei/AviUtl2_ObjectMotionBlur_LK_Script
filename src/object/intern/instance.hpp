@@ -12,11 +12,11 @@ namespace blur::object {
 struct Sample {
     Eigen::Vector2f pivot = Eigen::Vector2f::Zero();
     Transform transform{};
-    int frame = 0;
+    int frame = -1;
 };
 
 struct FrameMapping {
-    int frame = 0;
+    int frame = -1;
     Sample sample{};
 };
 

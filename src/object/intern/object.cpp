@@ -244,7 +244,7 @@ static_assert(kUnitBytes * kMaxUnitsPerSlot <= kMaxBytesPerSlot);
 }
 
 [[nodiscard]] std::optional<Object::Snapshot> BuildObjectTransforms(const Sample& smp, const FILTER_PROC_VIDEO* ctx) {
-    auto xforms = GetEmpties(smp.frame, ctx);
+    auto xforms = GetEmpties(std::min(ctx->object->frame_s + smp.frame, ctx->object->frame_e), ctx);
 
     if (!xforms.has_value()) {
         return std::nullopt;
@@ -361,12 +361,19 @@ static_assert(kUnitBytes * kMaxUnitsPerSlot <= kMaxBytesPerSlot);
 }
 
 [[nodiscard]] std::optional<FrameMapping> BuildFrameMapping(const FILTER_PROC_VIDEO* ctx) {
+    const auto frame = std::max(ctx->object->frame, 0);
+
     OBJECT_IMAGE_PARAM base;
 
-    if (!ctx->get_output_image_param(nullptr, 0.0, &base, sizeof(base))) {
-        aul::logger::Error(std::format(L"Failed to get object transform at layer {}, frame {}", ctx->object->layer + 1,
-                                       ctx->object->origin_frame));
-        return std::nullopt;
+    {
+        const auto spf = static_cast<double>(ctx->scene->rate) / ctx->scene->scale;
+        const auto df = static_cast<double>(std::min(frame, ctx->object->frame_total - 1) - ctx->object->frame);
+
+        if (!ctx->get_output_image_param(nullptr, df * spf, &base, sizeof(base))) {
+            aul::logger::Error(std::format(L"Failed to get object transform at layer {}, frame {}",
+                                           ctx->object->layer + 1, ctx->object->frame_s + ctx->object->frame));
+            return std::nullopt;
+        }
     }
 
     Eigen::Vector2f scale(base.sx * ctx->param->sx, base.sy * ctx->param->sy);
@@ -376,7 +383,7 @@ static_assert(kUnitBytes * kMaxUnitsPerSlot <= kMaxBytesPerSlot);
     }
 
     return FrameMapping{
-        .frame = ctx->object->origin_frame,
+        .frame = std::max(ctx->object->origin_frame - ctx->object->frame_s, 0),
         .sample =
             {
                 .pivot = Eigen::Vector2f(base.cx + ctx->param->cx, base.cy + ctx->param->cy),
@@ -386,8 +393,7 @@ static_assert(kUnitBytes * kMaxUnitsPerSlot <= kMaxBytesPerSlot);
                         .scale = scale.cwiseMax(kEpsilon),
                         .rotation = ToRadians(base.rz + ctx->param->rz),
                     },
-                .frame =
-                    std::clamp(ctx->object->frame_s + ctx->object->frame, ctx->object->frame_s, ctx->object->frame_e),
+                .frame = frame,
             },
     };
 }
@@ -494,10 +500,14 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
             auto& frames = mappings.back();
 
             for (size_t k = 0uz; k < unit.size(); ++k) {
-                frames[k + 2uz] = {
-                    .frame = -1,
-                    .sample = unit[k],
-                };
+                const auto& smp = unit[k];
+
+                if (smp.frame >= 0) {
+                    frames[k + 2uz] = {
+                        .frame = -1,
+                        .sample = smp,
+                    };
+                }
             }
         }
     }
@@ -535,13 +545,12 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
         curr = mapping;
     }
 
-    if (ctx->object->origin_frame <= ctx->object->frame_s) {
+    if (curr->frame == 0) {
         prev = std::nullopt;
     } else {
-        if (ctx->object->origin_frame <= ctx->object->frame_s + static_cast<int>(frames.size()) - 2) {
-            const auto df = ctx->object->origin_frame - ctx->object->frame_s;
-            frames[df + 1] = curr;
-            UpdatePersistent(df - 1, curr->sample, ctx);
+        if (curr->frame <= static_cast<int>(frames.size()) - 2) {
+            frames[curr->frame + 1] = curr;
+            UpdatePersistent(curr->frame - 1, curr->sample, ctx);
         }
 
         if (prev.has_value() && prev->sample.frame != curr->sample.frame && prev->frame != curr->frame) {
