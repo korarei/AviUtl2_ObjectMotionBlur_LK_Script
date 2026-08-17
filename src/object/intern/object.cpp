@@ -519,11 +519,13 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
     if (!instance->is_restored) {
         RestoreCache(instance->mappings, ctx->object->num);
         instance->is_restored = true;
+        aul::logger::Debug(std::format(L"Restored {} mappings", instance->mappings.size()));
     }
 
     if (instance->mappings.size() != static_cast<size_t>(ctx->object->num)) {
         instance->mappings.assign(ctx->object->num, std::array<std::optional<FrameMapping>, 4uz>{});
         ResetPersistent(ctx);
+        aul::logger::Debug(L"Reset mappings due to object count change");
     }
 
     auto& frames = instance->mappings[ctx->object->index];
