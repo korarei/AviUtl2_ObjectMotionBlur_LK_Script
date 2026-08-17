@@ -83,13 +83,18 @@ auto& value = control.value;
 FILTER_ITEM_CHECK should_resize(L"Resize", true);
 FILTER_ITEM_CHECK should_print_diagnostics(L"Diagnostics", false);
 namespace internal {
-std::array<FILTER_ITEM_DATA<void>, 10uz> persistents{
-    FILTER_ITEM_DATA<void>(L"Internal::Persistent[0]"), FILTER_ITEM_DATA<void>(L"Internal::Persistent[1]"),
-    FILTER_ITEM_DATA<void>(L"Internal::Persistent[2]"), FILTER_ITEM_DATA<void>(L"Internal::Persistent[3]"),
-    FILTER_ITEM_DATA<void>(L"Internal::Persistent[4]"), FILTER_ITEM_DATA<void>(L"Internal::Persistent[5]"),
-    FILTER_ITEM_DATA<void>(L"Internal::Persistent[6]"), FILTER_ITEM_DATA<void>(L"Internal::Persistent[7]"),
-    FILTER_ITEM_DATA<void>(L"Internal::Persistent[8]"), FILTER_ITEM_DATA<void>(L"Internal::Persistent[9]"),
-};
+std::array<FILTER_ITEM_DATA<void>, 10uz> persistents{{
+    {L"Internal::Persistent[0]"},
+    {L"Internal::Persistent[1]"},
+    {L"Internal::Persistent[2]"},
+    {L"Internal::Persistent[3]"},
+    {L"Internal::Persistent[4]"},
+    {L"Internal::Persistent[5]"},
+    {L"Internal::Persistent[6]"},
+    {L"Internal::Persistent[7]"},
+    {L"Internal::Persistent[8]"},
+    {L"Internal::Persistent[9]"},
+}};
 
 using Unit = std::array<Sample, 2uz>;
 constexpr auto kUnitBytes = static_cast<int>(sizeof(Unit));
@@ -515,11 +520,20 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
     auto& prev = frames[0uz];
     auto& curr = frames[1uz];
 
-    if (curr.has_value() && curr->frame != ctx->object->origin_frame) {
-        prev = curr;
-    }
+    {
+        const auto mapping = BuildFrameMapping(ctx);
 
-    curr = BuildFrameMapping(ctx);
+        if (!mapping.has_value()) {
+            curr = std::nullopt;
+            return *instance;
+        }
+
+        if (curr.has_value() && curr->sample.frame != mapping->sample.frame) {
+            prev = curr;
+        }
+
+        curr = mapping;
+    }
 
     if (ctx->object->origin_frame <= ctx->object->frame_s) {
         prev = std::nullopt;
@@ -530,14 +544,13 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
             UpdatePersistent(df - 1, curr->sample, ctx);
         }
 
-        if (prev.has_value()) {
-            if (auto df = ctx->object->origin_frame - prev->frame; df != 0 && df != 1) {
-                df = std::clamp(df, ctx->object->frame_s - ctx->object->origin_frame,
-                                ctx->object->frame_e - ctx->object->origin_frame);
+        if (prev.has_value() && prev->sample.frame != curr->sample.frame && prev->frame != curr->frame) {
+            if (auto df = curr->frame - prev->frame; df != 0 && df != 1) {
+                df = std::clamp(df, ctx->object->frame_s - curr->frame, ctx->object->frame_e - curr->frame);
 
                 const float t = 1.0f / static_cast<float>(df);
 
-                prev->frame = ctx->object->origin_frame - 1;
+                prev->frame = curr->frame - 1;
                 prev->sample = LerpSample(curr->sample, prev->sample, t);
 
                 if (df < 0) {
