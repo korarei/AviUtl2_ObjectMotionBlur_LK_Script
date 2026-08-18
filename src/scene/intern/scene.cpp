@@ -12,15 +12,15 @@
 #include <intern/aviutl/aviutl.hpp>
 #include <intern/string.hpp>
 
-#include "direct3d.hpp"
 #include "instance.hpp"
+#include "render.hpp"
 
 namespace {
 namespace aul = blur::aviutl;
 namespace string = blur::string;
+namespace renderer = blur::scene::renderer;
 
 using Instance = blur::scene::Instance;
-using Renderer = blur::scene::Renderer;
 
 constexpr float kEpsilon = 1.0e-5f;
 
@@ -85,8 +85,6 @@ auto& value = control.value;
 }  // namespace view
 }  // namespace properties
 
-Renderer renderer{};
-
 bool Apply(FILTER_PROC_VIDEO* ctx) {
     namespace props = properties;
 
@@ -127,7 +125,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         }
     }
 
-    const bool is_boundary = frame == ctx->object->frame_s || section != instance->section ||
+    const bool is_boundary = ctx->object->origin_frame == ctx->object->frame_s || section != instance->section ||
                              instance->image.w != ctx->object->width || instance->image.h != ctx->object->height;
 
     if (!ctx->copy_image_resource(L"resource:reference", nullptr)) {
@@ -186,7 +184,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 
     auto* const dst = ctx->get_image_texture2d();
 
-    Renderer::Source src{
+    renderer::Source src{
         .inputs =
             {
                 ctx->get_image_resource_texture2d(L"resource:reference"),
@@ -206,7 +204,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                                      ? static_cast<int32_t>(props::sampling::render::sample_limit.value)
                                      : static_cast<int32_t>(props::sampling::viewport::sample_limit.value);
 
-    const Renderer::Param param{
+    const renderer::Param param{
         .id =
             {
                 .w = static_cast<uint16_t>(ctx->object->width),
@@ -223,8 +221,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         .view_mode = props::view::value,
     };
 
-    const auto ec = renderer.Render(
-        dst, [&src, &param](Renderer::Context& ctx) -> std::error_code { return ctx.Draw(src, param); });
+    const auto ec = renderer::Render(
+        dst, [&src, &param](const renderer::Context& ctx) -> std::error_code { return ctx.Draw(src, param); });
 
     if (ec != std::error_code{}) {
         if (const auto msg = string::ToWString(string::AsUTF8(ec.message())); msg.has_value()) {
@@ -280,8 +278,8 @@ namespace blur::scene {
 void Register(HOST_APP_TABLE* host) {
     host->register_filter_plugin(&desc);
 
-    host->register_clear_cache_handler([]([[maybe_unused]] EDIT_SECTION* edit) { renderer.Reset(); });
+    host->register_clear_cache_handler([]([[maybe_unused]] EDIT_SECTION* edit) { renderer::Reset(); });
 }
 
-void Unregister() { renderer.Reset(); }
+void Unregister() { renderer::Reset(); }
 }  // namespace blur::scene

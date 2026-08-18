@@ -5,7 +5,7 @@ project(SceneMotionBlur LANGUAGES CXX)
 set(NVOF "${CMAKE_SOURCE_DIR}/extern/nvidia_sdk/optical_flow")
 
 add_library(${PROJECT_NAME} OBJECT
-    intern/direct3d.cpp
+    intern/render.cpp
     intern/scene.cpp
     "${NVOF}/NvOF.cpp"
     "${NVOF}/NvOFD3D11.cpp"
