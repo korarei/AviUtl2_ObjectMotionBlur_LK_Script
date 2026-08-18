@@ -104,6 +104,10 @@ constexpr auto kSlotCount = static_cast<int>(persistents.size());
 constexpr auto kUnitLimit = kSlotCount * kMaxUnitsPerSlot;
 
 static_assert(kUnitBytes * kMaxUnitsPerSlot <= kMaxBytesPerSlot);
+static_assert(alignof(Sample) == 4uz);
+static_assert(sizeof(Sample) == 32uz);
+static_assert(alignof(Unit) == 4uz);
+static_assert(sizeof(Unit) == 64uz);
 }  // namespace internal
 }  // namespace properties
 
@@ -195,7 +199,7 @@ static_assert(kUnitBytes * kMaxUnitsPerSlot <= kMaxBytesPerSlot);
 
 [[nodiscard]] std::optional<std::vector<Transform>> GetEmpties(int frame, const FILTER_PROC_VIDEO* ctx) {
     if (ctx->object->layer == 0) {
-        return {};
+        return std::vector<Transform>{};
     }
 
     const auto handles = GetEmptyHandles(frame, ctx);
@@ -557,7 +561,7 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
 
         if (prev.has_value() && prev->sample.frame != curr->sample.frame && prev->frame != curr->frame) {
             if (auto df = curr->frame - prev->frame; df != 0 && df != 1) {
-                df = std::clamp(df, ctx->object->frame_s - curr->frame, ctx->object->frame_e - curr->frame);
+                df = std::clamp(df, -curr->frame, ctx->object->frame_total - 1 - curr->frame);
 
                 const float t = 1.0f / static_cast<float>(df);
 
@@ -603,14 +607,14 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
             if (props::extrapolation::value > 0) {
                 auto xforms = Extrapolate(frames, state.start, ctx);
 
-                if (!xforms.has_value()) {
+                if (xforms.has_value()) {
+                    state.end = std::move(*xforms);
+                } else {
                     aul::logger::Warning(L"No cached frame available for extrapolation");
-                    return {};
+                    state.end = state.start;
                 }
-
-                state.end = std::move(*xforms);
             } else {
-                return {};
+                state.end = state.start;
             }
         } else {
             if (const auto& prev = frames[0uz]; prev.has_value()) {
@@ -623,7 +627,7 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
                 state.end = std::move(*xforms);
             } else {
                 aul::logger::Warning(L"No cached frame available");
-                return {};
+                state.end = state.start;
             }
         }
     }
@@ -800,10 +804,6 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 
     if (!object.has_value()) {
         return false;
-    }
-
-    if (object->state.depth == 0uz) {
-        return true;
     }
 
     const int required_samples = ComputeSamples(*object);
