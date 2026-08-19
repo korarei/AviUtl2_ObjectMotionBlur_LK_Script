@@ -83,6 +83,14 @@ auto& value = control.value;
 FILTER_ITEM_CHECK should_resize(L"Resize", true);
 FILTER_ITEM_CHECK should_print_diagnostics(L"Diagnostics", false);
 namespace internal {
+struct Revision {
+    uint64_t revision = 1u;
+};
+
+using Unit = std::array<Sample, 2uz>;
+
+FILTER_ITEM_DATA<Revision> revision(L"Internal::Revision");
+
 std::array<FILTER_ITEM_DATA<void>, 10uz> persistents{{
     {L"Internal::Persistent[0]"},
     {L"Internal::Persistent[1]"},
@@ -96,7 +104,7 @@ std::array<FILTER_ITEM_DATA<void>, 10uz> persistents{{
     {L"Internal::Persistent[9]"},
 }};
 
-using Unit = std::array<Sample, 2uz>;
+constexpr Revision kRevision{};
 constexpr auto kUnitBytes = static_cast<int>(sizeof(Unit));
 constexpr auto kMaxBytesPerSlot = 16000;
 constexpr auto kMaxUnitsPerSlot = kMaxBytesPerSlot / kUnitBytes;
@@ -482,11 +490,21 @@ void ResetPersistent(const FILTER_PROC_VIDEO* ctx) {
     }
 }
 
-void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& mappings, int size_hint) {
+void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& mappings, const FILTER_PROC_VIDEO* ctx) {
     namespace props = properties;
 
     mappings.clear();
-    mappings.reserve(size_hint);
+
+    if (props::internal::revision.value->revision != props::internal::kRevision.revision) {
+        for (auto& data : props::internal::persistents) {
+            ctx->set_filter_item_data_size(&data, 0);
+        }
+
+        *props::internal::revision.value = props::internal::kRevision;
+        return;
+    }
+
+    mappings.reserve(ctx->object->num);
 
     for (int i = 0; i < props::internal::kSlotCount; ++i) {
         const auto& slot = props::internal::persistents[i];
@@ -521,7 +539,7 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
     auto* const instance = static_cast<Instance*>(ctx->userdata);
 
     if (!instance->is_restored) {
-        RestoreCache(instance->mappings, ctx->object->num);
+        RestoreCache(instance->mappings, ctx);
         instance->is_restored = true;
         aul::logger::Debug(std::format(L"Restored {} mappings", instance->mappings.size()));
     }
@@ -788,8 +806,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
     namespace props = properties;
 
     if (ctx->object->index < 0 || ctx->object->index >= ctx->object->num) {
-        aul::logger::Error(L"Invalid object index");
-        return false;
+        aul::logger::Warning(L"Unable to determine object count");
+        return true;
     }
 
     if (ctx->object->width <= 0 || ctx->object->height <= 0) {
@@ -920,41 +938,35 @@ void* Init([[maybe_unused]] int64_t id) { return new Instance{}; }
 
 void Deinit([[maybe_unused]] int64_t id, void* instance) { delete static_cast<Instance*>(instance); }
 
-constinit void* props[] = {
-    &properties::shutter::name,
-    &properties::shutter::angle,
-    &properties::shutter::phase,
-    &properties::sampling::name,
-    &properties::sampling::viewport::name,
-    &properties::sampling::viewport::sample_limit,
-    &properties::sampling::render::name,
-    &properties::sampling::render::sample_limit,
-    &properties::compositing::name,
-    &properties::compositing::mix,
-    &properties::compositing::falloff,
-    &properties::additional_options,
-    &properties::extrapolation::control,
-    &properties::should_resize,
-    &properties::should_print_diagnostics,
-    &properties::internal::persistents[0uz],  // NOLINT(readability-container-data-pointer)
-    &properties::internal::persistents[1uz],
-    &properties::internal::persistents[2uz],
-    &properties::internal::persistents[3uz],
-    &properties::internal::persistents[4uz],
-    &properties::internal::persistents[5uz],
-    &properties::internal::persistents[6uz],
-    &properties::internal::persistents[7uz],
-    &properties::internal::persistents[8uz],
-    &properties::internal::persistents[9uz],
-    nullptr,
-};
+inline constinit auto props = []<std::size_t... Is>(std::index_sequence<Is...>) {
+    return std::to_array<void*>({
+        &properties::shutter::name,
+        &properties::shutter::angle,
+        &properties::shutter::phase,
+        &properties::sampling::name,
+        &properties::sampling::viewport::name,
+        &properties::sampling::viewport::sample_limit,
+        &properties::sampling::render::name,
+        &properties::sampling::render::sample_limit,
+        &properties::compositing::name,
+        &properties::compositing::mix,
+        &properties::compositing::falloff,
+        &properties::additional_options,
+        &properties::extrapolation::control,
+        &properties::should_resize,
+        &properties::should_print_diagnostics,
+        &properties::internal::revision,
+        (&properties::internal::persistents[Is])...,
+        nullptr,
+    });
+}(std::make_index_sequence<std::size(properties::internal::persistents)>{});
 
 constinit FILTER_PLUGIN_TABLE desc{
     .flag = FILTER_PLUGIN_TABLE::FLAG_VIDEO | FILTER_PLUGIN_TABLE::FLAG_USERDATA,
     .name = L"ObjectMotionBlur_LK",
     .label = L"ぼかし",
     .information = L"ObjectMotionBlur_LK v" VERSION L" by Korarei",
-    .items = props,
+    .items = props.data(),
     .func_proc_video = Apply,
     .func_proc_audio = nullptr,
     .func_create = Init,
