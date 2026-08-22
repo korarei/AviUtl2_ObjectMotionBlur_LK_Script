@@ -7,11 +7,17 @@
 #include <blur.h>
 #include <fullscreen.h>
 
+#include <intern/error/error.hpp>
+
 namespace {
-template <typename T>
-using ComPtr = Microsoft::WRL::ComPtr<T>;
+namespace renderer = blur::object::renderer;
+
+using Microsoft::WRL::ComPtr;
 
 namespace d3d {
+using blur::error::direct3d::Error;
+using blur::error::direct3d::ToErrorCode;
+
 std::mutex mutex;
 
 ComPtr<ID3D11Device> device = nullptr;
@@ -27,90 +33,25 @@ struct {
     ComPtr<ID3D11Buffer> buf = nullptr;
     ComPtr<ID3D11ShaderResourceView> srv = nullptr;
     size_t capacity = 0uz;
-} xforms{};
+} trajectory{};
+}  // namespace d3d
 
 void Release() {
-    xforms.buf.Reset();
-    xforms.srv.Reset();
-    xforms.capacity = 0uz;
+    d3d::trajectory.buf.Reset();
+    d3d::trajectory.srv.Reset();
+    d3d::trajectory.capacity = 0uz;
 
-    cb.Reset();
-    smp.Reset();
-    ps.Reset();
-    vs.Reset();
-    dss.Reset();
+    d3d::cb.Reset();
+    d3d::smp.Reset();
+    d3d::ps.Reset();
+    d3d::vs.Reset();
+    d3d::dss.Reset();
 
-    ctx.Reset();
-    device.Reset();
-}
-}  // namespace d3d
-}  // namespace
-
-namespace blur::object::renderer {
-namespace {
-class ErrorCategory final : public std::error_category {
-  public:
-    [[nodiscard]] const char* name() const noexcept override { return "blur.object.renderer"; }
-
-    [[nodiscard]] std::string message(int condition) const override {
-        switch (static_cast<Error>(condition)) {
-            case Error::kDeviceRemoved:
-                return "Direct3D device was removed";
-            case Error::kDeviceReset:
-                return "Direct3D device was reset";
-            case Error::kDeviceHung:
-                return "Direct3D device stopped responding";
-            case Error::kMapBufferFailed:
-                return "Failed to map buffer";
-            case Error::kCreateBufferFailed:
-                return "Failed to create buffer";
-            case Error::kCreateRenderTargetViewFailed:
-                return "Failed to create render target view";
-            case Error::kCreateShaderResourceViewFailed:
-                return "Failed to create shader resource view";
-            case Error::kCreateVertexShaderFailed:
-                return "Failed to create vertex shader";
-            case Error::kCreatePixelShaderFailed:
-                return "Failed to create pixel shader";
-            case Error::kCreateDepthStencilStateFailed:
-                return "Failed to create depth stencil state";
-            case Error::kCreateSamplerStateFailed:
-                return "Failed to create sampler state";
-        }
-
-        return "Unknown error";
-    }
-};
-
-[[nodiscard]] std::error_code ToErrorCode(HRESULT result, Error fallback) noexcept {
-    switch (result) {
-        case E_INVALIDARG:
-            return std::make_error_code(std::errc::invalid_argument);
-        case E_OUTOFMEMORY:
-            return std::make_error_code(std::errc::not_enough_memory);
-        case E_ACCESSDENIED:
-            return std::make_error_code(std::errc::permission_denied);
-        case E_NOTIMPL:
-        case E_NOINTERFACE:
-            return std::make_error_code(std::errc::not_supported);
-        case E_ABORT:
-            return std::make_error_code(std::errc::operation_canceled);
-        case DXGI_ERROR_UNSUPPORTED:
-            return std::make_error_code(std::errc::not_supported);
-        case DXGI_ERROR_DEVICE_REMOVED:
-            return Error::kDeviceRemoved;
-        case DXGI_ERROR_DEVICE_RESET:
-            return Error::kDeviceReset;
-        case DXGI_ERROR_DEVICE_HUNG:
-            return Error::kDeviceHung;
-        default:
-            return fallback;
-    }
+    d3d::ctx.Reset();
+    d3d::device.Reset();
 }
 
-constinit const ErrorCategory kErrorCategory{};
-
-[[nodiscard]] std::error_code EnsureResources(ID3D11Texture2D* tex) {
+[[nodiscard]] std::error_code EnsurePipeline(ID3D11Texture2D* tex) {
     {
         ComPtr<ID3D11Device> device;
         tex->GetDevice(&device);
@@ -119,13 +60,19 @@ constinit const ErrorCategory kErrorCategory{};
             return {};
         }
 
-        d3d::Release();
+        Release();
 
         d3d::device = std::move(device);
         d3d::device->GetImmediateContext(&d3d::ctx);
     }
 
-    HRESULT result;
+#define TRY(expr, fallback)                                  \
+    do {                                                     \
+        if (const HRESULT hr_ = (expr); FAILED(hr_)) {       \
+            Release();                                       \
+            return d3d::ToErrorCode(hr_).value_or(fallback); \
+        }                                                    \
+    } while (false)
 
     {
         constexpr D3D11_DEPTH_STENCIL_DESC desc{
@@ -139,24 +86,14 @@ constinit const ErrorCategory kErrorCategory{};
             .BackFace = {},
         };
 
-        result = d3d::device->CreateDepthStencilState(&desc, &d3d::dss);
-        if (FAILED(result)) {
-            d3d::Release();
-            return ToErrorCode(result, Error::kCreateDepthStencilStateFailed);
-        }
+        TRY(d3d::device->CreateDepthStencilState(&desc, &d3d::dss), d3d::Error::kCreateDepthStencilStateFailed);
     }
 
-    result = d3d::device->CreateVertexShader(g_fullscreen, sizeof(g_fullscreen), nullptr, &d3d::vs);
-    if (FAILED(result)) {
-        d3d::Release();
-        return ToErrorCode(result, Error::kCreateVertexShaderFailed);
-    }
+    TRY(d3d::device->CreateVertexShader(g_fullscreen, sizeof(g_fullscreen), nullptr, &d3d::vs),
+        d3d::Error::kCreateVertexShaderFailed);
 
-    result = d3d::device->CreatePixelShader(g_blur, sizeof(g_blur), nullptr, &d3d::ps);
-    if (FAILED(result)) {
-        d3d::Release();
-        return ToErrorCode(result, Error::kCreatePixelShaderFailed);
-    }
+    TRY(d3d::device->CreatePixelShader(g_blur, sizeof(g_blur), nullptr, &d3d::ps),
+        d3d::Error::kCreatePixelShaderFailed);
 
     {
         constexpr D3D11_SAMPLER_DESC desc{
@@ -172,16 +109,12 @@ constinit const ErrorCategory kErrorCategory{};
             .MaxLOD = D3D11_FLOAT32_MAX,
         };
 
-        result = d3d::device->CreateSamplerState(&desc, &d3d::smp);
-        if (FAILED(result)) {
-            d3d::Release();
-            return ToErrorCode(result, Error::kCreateSamplerStateFailed);
-        }
+        TRY(d3d::device->CreateSamplerState(&desc, &d3d::smp), d3d::Error::kCreateSamplerStateFailed);
     }
 
     {
         constexpr D3D11_BUFFER_DESC desc{
-            .ByteWidth = sizeof(Param),
+            .ByteWidth = sizeof(renderer::Parameter),
             .Usage = D3D11_USAGE_DYNAMIC,
             .BindFlags = D3D11_BIND_CONSTANT_BUFFER,
             .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
@@ -189,24 +122,20 @@ constinit const ErrorCategory kErrorCategory{};
             .StructureByteStride = 0u,
         };
 
-        result = d3d::device->CreateBuffer(&desc, nullptr, &d3d::cb);
-        if (FAILED(result)) {
-            d3d::Release();
-            return ToErrorCode(result, Error::kCreateBufferFailed);
-        }
+        TRY(d3d::device->CreateBuffer(&desc, nullptr, &d3d::cb), d3d::Error::kCreateBufferFailed);
     }
+
+#undef TRY
 
     return {};
 }
 }  // namespace
 
-std::error_code make_error_code(Error error) noexcept { return {static_cast<int>(error), kErrorCategory}; }
-
+namespace blur::object::renderer {
 [[nodiscard]] Context CreateContext(ID3D11Texture2D* dst) { return Context(dst); }
 
 // subframe_xforms は empty を許さず，あまりにも大きなサイズ (2 GiB?) も認めない．呼び出し側に責任．
-std::error_code Context::Draw(ID3D11Texture2D* src, const std::vector<Float2x3>& subframe_xforms,
-                              const Param& param) const {
+std::error_code Context::Draw(const Target& target, const Parameter& param) const {
     static constexpr ID3D11ShaderResourceView* null_srvs[2uz] = {nullptr, nullptr};
 
     HRESULT result;
@@ -216,7 +145,7 @@ std::error_code Context::Draw(ID3D11Texture2D* src, const std::vector<Float2x3>&
 
         result = d3d::ctx->Map(d3d::cb.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped);
         if (FAILED(result)) {
-            return ToErrorCode(result, Error::kMapBufferFailed);
+            return d3d::ToErrorCode(result).value_or(d3d::Error::kMapBufferFailed);
         }
 
         std::memcpy(mapped.pData, &param, sizeof(param));
@@ -225,19 +154,19 @@ std::error_code Context::Draw(ID3D11Texture2D* src, const std::vector<Float2x3>&
         d3d::ctx->PSSetConstantBuffers(0u, 1u, d3d::cb.GetAddressOf());
     }
 
-    if (subframe_xforms.size() <= d3d::xforms.capacity) {
+    if (target.trajectory.size() <= d3d::trajectory.capacity) {
         D3D11_MAPPED_SUBRESOURCE mapped{};
 
-        result = d3d::ctx->Map(d3d::xforms.buf.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped);
+        result = d3d::ctx->Map(d3d::trajectory.buf.Get(), 0u, D3D11_MAP_WRITE_DISCARD, 0u, &mapped);
         if (FAILED(result)) {
-            return ToErrorCode(result, Error::kMapBufferFailed);
+            return d3d::ToErrorCode(result).value_or(d3d::Error::kMapBufferFailed);
         }
 
-        std::memcpy(mapped.pData, subframe_xforms.data(), subframe_xforms.size() * sizeof(Float2x3));
-        d3d::ctx->Unmap(d3d::xforms.buf.Get(), 0u);
+        std::memcpy(mapped.pData, target.trajectory.data(), target.trajectory.size() * sizeof(Float2x3));
+        d3d::ctx->Unmap(d3d::trajectory.buf.Get(), 0u);
     } else {
         const D3D11_BUFFER_DESC desc{
-            .ByteWidth = static_cast<UINT>(subframe_xforms.size() * sizeof(Float2x3)),
+            .ByteWidth = static_cast<UINT>(target.trajectory.size() * sizeof(Float2x3)),
             .Usage = D3D11_USAGE_DYNAMIC,
             .BindFlags = D3D11_BIND_SHADER_RESOURCE,
             .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
@@ -246,7 +175,7 @@ std::error_code Context::Draw(ID3D11Texture2D* src, const std::vector<Float2x3>&
         };
 
         const D3D11_SUBRESOURCE_DATA data{
-            .pSysMem = subframe_xforms.data(),
+            .pSysMem = target.trajectory.data(),
             .SysMemPitch = 0u,
             .SysMemSlicePitch = 0u,
         };
@@ -254,32 +183,32 @@ std::error_code Context::Draw(ID3D11Texture2D* src, const std::vector<Float2x3>&
         ComPtr<ID3D11Buffer> buf;
         result = d3d::device->CreateBuffer(&desc, &data, &buf);
         if (FAILED(result)) {
-            return ToErrorCode(result, Error::kCreateBufferFailed);
+            return d3d::ToErrorCode(result).value_or(d3d::Error::kCreateBufferFailed);
         }
 
         ComPtr<ID3D11ShaderResourceView> srv;
         result = d3d::device->CreateShaderResourceView(buf.Get(), nullptr, &srv);
         if (FAILED(result)) {
-            return ToErrorCode(result, Error::kCreateShaderResourceViewFailed);
+            return d3d::ToErrorCode(result).value_or(d3d::Error::kCreateShaderResourceViewFailed);
         }
 
-        d3d::xforms.buf = std::move(buf);
-        d3d::xforms.srv = std::move(srv);
-        d3d::xforms.capacity = subframe_xforms.size();
+        d3d::trajectory.buf = std::move(buf);
+        d3d::trajectory.srv = std::move(srv);
+        d3d::trajectory.capacity = target.trajectory.size();
     }
 
-    ComPtr<ID3D11ShaderResourceView> srv;
-    result = d3d::device->CreateShaderResourceView(src, nullptr, &srv);
+    ComPtr<ID3D11ShaderResourceView> img_srv;
+    result = d3d::device->CreateShaderResourceView(target.image, nullptr, &img_srv);
     if (FAILED(result)) {
-        return ToErrorCode(result, Error::kCreateShaderResourceViewFailed);
+        return d3d::ToErrorCode(result).value_or(d3d::Error::kCreateShaderResourceViewFailed);
     }
 
-    ID3D11ShaderResourceView* const inputs[] = {srv.Get(), d3d::xforms.srv.Get()};
+    ID3D11ShaderResourceView* const inputs[] = {img_srv.Get(), d3d::trajectory.srv.Get()};
 
     ComPtr<ID3D11RenderTargetView> rtv;
     result = d3d::device->CreateRenderTargetView(dst_, nullptr, &rtv);
     if (FAILED(result)) {
-        return ToErrorCode(result, Error::kCreateRenderTargetViewFailed);
+        return d3d::ToErrorCode(result).value_or(d3d::Error::kCreateRenderTargetViewFailed);
     }
 
     D3D11_TEXTURE2D_DESC desc{};
@@ -318,7 +247,9 @@ std::error_code Context::Draw(ID3D11Texture2D* src, const std::vector<Float2x3>&
 std::error_code Render(ID3D11Texture2D* dst, FunctionRef callback) {
     const std::lock_guard lock(d3d::mutex);
 
-    if (const auto ec = EnsureResources(dst); ec != std::error_code{}) {
+    std::error_code ec;
+
+    if (ec = EnsurePipeline(dst); ec != std::error_code{}) {
         return ec;
     }
 
@@ -329,11 +260,16 @@ std::error_code Render(ID3D11Texture2D* dst, FunctionRef callback) {
 
     d3d::ctx->GSSetShader(nullptr, nullptr, 0u);
 
-    return callback(CreateContext(dst));
+    if (ec = callback(CreateContext(dst)); ec != std::error_code{}) {
+        Release();
+        return ec;
+    }
+
+    return {};
 }
 
 void Reset() {
     const std::lock_guard lock(d3d::mutex);
-    d3d::Release();
+    Release();
 }
 }  // namespace blur::object::renderer

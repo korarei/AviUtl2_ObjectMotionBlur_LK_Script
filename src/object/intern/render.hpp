@@ -4,31 +4,20 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <system_error>
-#include <vector>
 
 namespace blur::object::renderer {
-enum class Error : uint8_t {
-    kDeviceRemoved = 1u,
-    kDeviceReset,
-    kDeviceHung,
-    kMapBufferFailed,
-    kCreateBufferFailed,
-    kCreateRenderTargetViewFailed,
-    kCreateShaderResourceViewFailed,
-    kCreateVertexShaderFailed,
-    kCreatePixelShaderFailed,
-    kCreateDepthStencilStateFailed,
-    kCreateSamplerStateFailed,
-};
-
-std::error_code make_error_code(Error error) noexcept;
-
 using Float2x3 = std::array<std::array<float, 3uz>, 2uz>;
 
 static_assert(sizeof(Float2x3) == sizeof(float) * 6uz);
 
-struct alignas(16) Param {
+struct Target {
+    ID3D11Texture2D* image;
+    std::span<const Float2x3> trajectory;
+};
+
+struct alignas(16) Parameter {
     float transform[2uz][4uz] = {{1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}};
     float origin[2uz] = {0.0f, 0.0f};
     float texel[2uz] = {1.0f, 1.0f};
@@ -46,8 +35,7 @@ class Context {
 
     ~Context() = default;
 
-    [[nodiscard]] std::error_code Draw(ID3D11Texture2D* src, const std::vector<Float2x3>& subframe_xforms,
-                                       const Param& param) const;
+    [[nodiscard]] std::error_code Draw(const Target& target, const Parameter& param) const;
 
   private:
     friend Context CreateContext(ID3D11Texture2D* dst);
@@ -79,6 +67,3 @@ class FunctionRef {
 
 void Reset();
 }  // namespace blur::object::renderer
-
-template <>
-struct std::is_error_code_enum<blur::object::renderer::Error> : true_type {};

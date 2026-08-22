@@ -77,6 +77,7 @@ add_compile_definitions(
 )
 
 add_subdirectory(intern/aviutl)
+add_subdirectory(intern/error)
 
 add_subdirectory(object)
 add_subdirectory(scene)
@@ -95,6 +96,7 @@ generate_export_header(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
         AviUtl
+        Error
         ObjectMotionBlur
         SceneMotionBlur
 )
