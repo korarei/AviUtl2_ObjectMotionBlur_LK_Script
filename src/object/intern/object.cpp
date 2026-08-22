@@ -31,6 +31,7 @@ namespace renderer = blur::object::renderer;
 using FrameMapping = blur::object::FrameMapping;
 using Instance = blur::object::Instance;
 using Sample = blur::object::Sample;
+using State = blur::object::State;
 using Transform = blur::object::Transform;
 
 constexpr float kEpsilon = Eigen::NumTraits<float>::dummy_precision();
@@ -305,7 +306,7 @@ static_assert(sizeof(Unit) == 64uz);
 }
 
 [[nodiscard]] std::optional<Object::Snapshot> BuildObjectTransforms(const Sample& smp, const FILTER_PROC_VIDEO* ctx) {
-    auto xforms = GetEmpties(std::min(ctx->object->frame_s + smp.frame, ctx->object->frame_e), ctx);
+    auto xforms = GetEmpties(ctx->object->frame_s + smp.frame, ctx);
 
     if (!xforms.has_value()) {
         return std::nullopt;
@@ -319,62 +320,54 @@ static_assert(sizeof(Unit) == 64uz);
     };
 }
 
-[[nodiscard]] std::optional<Object::Snapshot> Extrapolate(const std::array<std::optional<FrameMapping>, 4uz>& frames,
+template <typename T>
+[[nodiscard]] T ClampVelocity(const T& velocity, const T& limit) {
+    return velocity.cwiseMax(limit.cwiseMin(0.0f)).cwiseMin(limit.cwiseMax(0.0f));
+}
+
+[[nodiscard]] float ClampVelocity(float velocity, float limit) {
+    return std::clamp(velocity, std::min(limit, 0.0f), std::max(limit, 0.0f));
+}
+
+template <typename T, typename F>
+[[nodiscard]] T Retrodict(F value_at, int order) {
+    const T v0 = value_at(0uz);
+    const T v1 = value_at(1uz);
+    const T d0 = v1 - v0;
+
+    if (order == 1) {
+        return v0 - d0;
+    }
+
+    const T d1 = value_at(2uz) - v1;
+    const T velocity = ((3.0f * d0) - d1) * 0.5f;
+    const T limit = 3.0f * d0;
+
+    return v0 - ClampVelocity(velocity, limit);
+}
+
+[[nodiscard]] std::optional<Object::Snapshot> Extrapolate(const std::array<Sample, 2uz>& samples,
                                                           const Object::Snapshot& zero, const FILTER_PROC_VIDEO* ctx) {
     namespace props = properties;
 
     static const Transform identity{};
 
-    if (props::extrapolation::value < 1 || props::extrapolation::value > 2) {
+    const int order = props::extrapolation::value;
+
+    if (order < 1 || order > 2 || order >= ctx->object->frame_total - 1) {
         return std::nullopt;
     }
 
-    const auto retrodict = [](auto&& value_at) {
-        const auto v0 = value_at(0uz);
-        const auto v1 = value_at(1uz);
-        const auto d0 = v1 - v0;
-
-        if (props::extrapolation::value == 1) {
-            return (v0 - d0).eval();
-        }
-
-        const auto v2 = value_at(2uz);
-        const auto d1 = v2 - v1;
-
-        const auto velocity = ((3.0f * d0) - d1) * 0.5f;
-        const auto limit = 3.0f * d0;
-
-        return (v0 - velocity.cwiseMax(limit.cwiseMin(0.0f)).cwiseMin(limit.cwiseMax(0.0f))).eval();
-    };
-
-    const auto retrodict_scalar = [](auto&& value_at) -> float {
-        const float v0 = value_at(0uz);
-        const float v1 = value_at(1uz);
-        const float d0 = v1 - v0;
-
-        if (props::extrapolation::value == 1) {
-            return v0 - d0;
-        }
-
-        const float v2 = value_at(2uz);
-        const float d1 = v2 - v1;
-
-        const float velocity = ((3.0f * d0) - d1) * 0.5f;
-        const float limit = 3.0f * d0;
-
-        return v0 - std::clamp(velocity, std::min(limit, 0.0f), std::max(limit, 0.0f));
-    };
-
     std::array<Object::Snapshot, 3uz> snapshots{zero};
 
-    for (int i = 1; i <= props::extrapolation::value; ++i) {
-        const auto& frame = frames[i + 1];
+    for (size_t i = 1uz; i < snapshots.size(); ++i) {
+        const auto& sample = samples[i - 1uz];
 
-        if (!frame.has_value()) {
+        if (sample.frame < 0) {
             return std::nullopt;
         }
 
-        auto xforms = BuildObjectTransforms(frame->sample, ctx);
+        auto xforms = BuildObjectTransforms(sample, ctx);
 
         if (!xforms.has_value()) {
             return std::nullopt;
@@ -385,50 +378,56 @@ static_assert(sizeof(Unit) == 64uz);
 
     size_t depth = 0uz;
 
-    for (int i = 0; i <= props::extrapolation::value; ++i) {
-        depth = std::max(depth, snapshots[i].transforms.size());
+    for (const auto& snapshot : snapshots) {
+        depth = std::max(depth, snapshot.transforms.size());
     }
 
     Object::Snapshot snapshot{};
 
-    snapshot.pivot = retrodict([&](size_t i) { return snapshots[i].pivot.array(); });
+    snapshot.pivot = Retrodict<Eigen::Vector2f>([&](size_t i) { return snapshots[i].pivot; }, order);
     snapshot.transforms.resize(depth);
 
-    std::array<const std::vector<Transform>*, 3uz> lists{};
-    std::array<size_t, 3uz> offsets{};
+    std::array<const std::vector<Transform>*, snapshots.size()> lists{};
+    std::array<size_t, snapshots.size()> offsets{};
 
-    for (int i = 0; i <= props::extrapolation::value; ++i) {
+    for (size_t i = 0uz; i < snapshots.size(); ++i) {
         lists[i] = &snapshots[i].transforms;
         offsets[i] = depth - lists[i]->size();
     }
 
     for (size_t i = 0uz; i < depth; ++i) {
-        std::array<const Transform*, 3uz> inputs{};
+        std::array<const Transform*, snapshots.size()> inputs{};
 
-        for (int j = 0; j <= props::extrapolation::value; ++j) {
+        for (size_t j = 0uz; j < inputs.size(); ++j) {
             inputs[j] = (i < offsets[j]) ? &identity : &(*lists[j])[i - offsets[j]];
         }
 
         auto& xform = snapshot.transforms[i];
 
-        xform.position = retrodict([&](size_t k) { return inputs[k]->position.array(); });
-
-        xform.scale = retrodict([&](size_t k) { return inputs[k]->scale.array().log(); }).exp().cwiseMax(kEpsilon);
-
-        xform.rotation = retrodict_scalar([&](size_t k) { return inputs[k]->rotation; });
+        xform = {
+            .position = Retrodict<Eigen::Vector2f>([&](size_t k) { return inputs[k]->position; }, order),
+            .scale =
+                Retrodict<Eigen::Vector2f>([&](size_t k) { return inputs[k]->scale.array().log().matrix(); }, order)
+                    .array()
+                    .exp()
+                    .matrix()
+                    .cwiseMax(kEpsilon),
+            .rotation = Retrodict<float>([&](size_t k) { return inputs[k]->rotation; }, order),
+        };
     }
 
     return snapshot;
 }
 
 [[nodiscard]] std::optional<FrameMapping> BuildFrameMapping(const FILTER_PROC_VIDEO* ctx) {
-    const auto frame = std::max(ctx->object->frame, 0);
+    const auto span = ctx->object->frame_total - 1;
+    const auto frame = std::clamp(ctx->object->frame, 0, span);
 
     OBJECT_IMAGE_PARAM base;
 
     {
         const auto spf = static_cast<double>(ctx->scene->rate) / ctx->scene->scale;
-        const auto df = static_cast<double>(std::min(frame, ctx->object->frame_total - 1) - ctx->object->frame);
+        const auto df = static_cast<double>(frame - ctx->object->frame);
 
         if (!ctx->get_output_image_param(nullptr, df * spf, &base, sizeof(base))) {
             aul::logger::Error(std::format(L"Failed to get object transform at layer {}, frame {}",
@@ -444,7 +443,7 @@ static_assert(sizeof(Unit) == 64uz);
     }
 
     return FrameMapping{
-        .frame = std::max(ctx->object->origin_frame - ctx->object->frame_s, 0),
+        .frame = std::clamp(ctx->object->origin_frame - ctx->object->frame_s, 0, span),
         .sample =
             {
                 .pivot = Eigen::Vector2f(base.cx + ctx->param->cx, base.cy + ctx->param->cy),
@@ -456,20 +455,6 @@ static_assert(sizeof(Unit) == 64uz);
                     },
                 .frame = frame,
             },
-    };
-}
-
-[[nodiscard]] Sample LerpSample(const Sample& curr, const Sample& prev, float t) {
-    return {
-        .pivot = Lerp(curr.pivot, prev.pivot, t),
-        .transform =
-            {
-                Lerp(curr.transform.position, prev.transform.position, t),
-                Lerp(curr.transform.scale, prev.transform.scale, t),
-                std::lerp(curr.transform.rotation, prev.transform.rotation, t),
-            },
-        .frame = static_cast<int>(
-            std::lerp(static_cast<double>(curr.frame), static_cast<double>(prev.frame), static_cast<double>(t))),
     };
 }
 
@@ -539,10 +524,10 @@ void ResetPersistent(const FILTER_PROC_VIDEO* ctx) {
     }
 }
 
-void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& mappings, const FILTER_PROC_VIDEO* ctx) {
+void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
     namespace props = properties;
 
-    mappings.clear();
+    states.clear();
 
     if (props::internal::revision.value->revision != props::internal::kRevision.revision) {
         for (auto& data : props::internal::persistents) {
@@ -553,7 +538,7 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
         return;
     }
 
-    mappings.reserve(ctx->object->num);
+    states.reserve(ctx->object->num);
 
     for (int i = 0; i < props::internal::kSlotCount; ++i) {
         const auto& slot = props::internal::persistents[i];
@@ -567,82 +552,99 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
         for (int j = 0; j < count; ++j) {
             const auto& unit = static_cast<const props::internal::Unit*>(slot.value)[j];
 
-            mappings.emplace_back();
-            auto& frames = mappings.back();
+            states.emplace_back();
+            auto& state = states.back();
 
             for (size_t k = 0uz; k < unit.size(); ++k) {
                 const auto& smp = unit[k];
 
                 if (smp.frame >= 0) {
-                    frames[k + 2uz] = {
-                        .frame = -1,
-                        .sample = smp,
-                    };
+                    state.samples[k] = smp;
                 }
             }
         }
     }
 }
 
-[[nodiscard]] const Instance& UpdateCache(const FILTER_PROC_VIDEO* ctx) {
+[[nodiscard]] const Instance* UpdateCache(const FILTER_PROC_VIDEO* ctx) {
     auto* const instance = static_cast<Instance*>(ctx->userdata);
 
     if (!instance->is_restored) {
-        RestoreCache(instance->mappings, ctx);
+        RestoreCache(instance->states, ctx);
         instance->is_restored = true;
-        aul::logger::Debug(std::format(L"Restored {} mappings", instance->mappings.size()));
+        aul::logger::Debug(std::format(L"Restored {} states", instance->states.size()));
     }
 
-    if (instance->mappings.size() != static_cast<size_t>(ctx->object->num)) {
-        instance->mappings.assign(ctx->object->num, std::array<std::optional<FrameMapping>, 4uz>{});
+    if (instance->states.size() != static_cast<size_t>(ctx->object->num)) {
+        instance->states.assign(ctx->object->num, State{});
         ResetPersistent(ctx);
-        aul::logger::Debug(L"Reset mappings due to object count change");
+        aul::logger::Debug(L"Reset states due to object count change");
     }
 
-    auto& frames = instance->mappings[ctx->object->index];
-    auto& prev = frames[0uz];
-    auto& curr = frames[1uz];
+    auto& state = instance->states[ctx->object->index];
+
+    auto& curr = state.history[1uz];
+    auto& prev = state.history[0uz];
 
     {
-        const auto mapping = BuildFrameMapping(ctx);
+        auto mapping = BuildFrameMapping(ctx);
 
         if (!mapping.has_value()) {
-            curr = std::nullopt;
-            return *instance;
+            return nullptr;
         }
 
-        if (curr.has_value() && curr->sample.frame != mapping->sample.frame) {
-            prev = curr;
-        }
+        if (curr.frame >= 0 && curr.frame != mapping->frame) {
+            prev.frame = curr.frame;
 
-        curr = mapping;
-    }
-
-    if (curr->frame == 0) {
-        prev = std::nullopt;
-    } else {
-        if (curr->frame <= static_cast<int>(frames.size()) - 2) {
-            frames[curr->frame + 1] = curr;
-            UpdatePersistent(curr->frame - 1, curr->sample, ctx);
-        }
-
-        if (prev.has_value() && prev->sample.frame != curr->sample.frame && prev->frame != curr->frame) {
-            if (auto df = curr->frame - prev->frame; df != 0 && df != 1) {
-                df = std::clamp(df, -curr->frame, ctx->object->frame_total - 1 - curr->frame);
-
-                const float t = 1.0f / static_cast<float>(df);
-
-                prev->frame = curr->frame - 1;
-                prev->sample = LerpSample(curr->sample, prev->sample, t);
-
-                if (df < 0) {
-                    aul::logger::Warning(L"Reverse playback is not supported");
-                }
+            if (prev.sample.frame < 0 || curr.sample.frame != mapping->sample.frame) {
+                prev.sample = curr.sample;
             }
         }
+
+        curr = std::move(*mapping);
     }
 
-    return *instance;
+    // この時点で curr.frame は 0 以上
+
+    if (curr.frame <= 0) {
+        prev = FrameMapping{};
+    } else if (curr.frame <= 2) {
+        const int pos = curr.frame - 1;
+        state.samples[pos] = curr.sample;
+        UpdatePersistent(pos, curr.sample, ctx);
+    }
+
+    if (prev.frame >= 0 && prev.frame != curr.frame) {
+        if (auto df = curr.frame - prev.frame; df != 1) {
+            aul::logger::Warning(std::format(L"Non-consecutive frames are not supported: expected {}, got {}",
+                                             prev.frame + 1, curr.frame));
+
+            const auto span = ctx->object->frame_total - 1;
+            df = std::clamp(df, -curr.frame, span - curr.frame);
+            const auto t = 1.0f / static_cast<float>(df);
+
+            const auto frame = std::lerp(static_cast<double>(curr.frame), static_cast<double>(prev.frame), 1.0 / df);
+
+            prev = {
+                .frame = curr.frame - 1,
+                .sample =
+                    {
+                        .pivot = Lerp(curr.sample.pivot, prev.sample.pivot, t),
+                        .transform =
+                            {
+                                Lerp(curr.sample.transform.position, prev.sample.transform.position, t),
+                                Lerp(curr.sample.transform.scale, prev.sample.transform.scale, t),
+                                std::lerp(curr.sample.transform.rotation, prev.sample.transform.rotation, t),
+                            },
+                        .frame = std::clamp(static_cast<int>(frame), 0, span),
+                    },
+            };
+
+            aul::logger::Warning(L"Previous data was replaced with an estimate");
+        }
+    }
+
+    return instance;
 }
 
 [[nodiscard]] std::optional<Object> ResolveObject(const FILTER_PROC_VIDEO* ctx) {
@@ -657,10 +659,16 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
     auto& rig = object.rig;
     Object::Snapshot start, end;
 
-    const auto& frames = UpdateCache(ctx).mappings[ctx->object->index];
+    const auto* instance = UpdateCache(ctx);
 
-    if (const auto& curr = frames[1uz]; curr.has_value()) {
-        if (auto xforms = BuildObjectTransforms(curr->sample, ctx); xforms.has_value()) {
+    if (instance == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto& state = instance->states[ctx->object->index];
+
+    if (const auto& curr = state.history[1uz]; curr.frame >= 0) {
+        if (auto xforms = BuildObjectTransforms(curr.sample, ctx); xforms.has_value()) {
             start = std::move(*xforms);
         } else {
             return std::nullopt;
@@ -671,7 +679,7 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
 
     if (ctx->object->origin_frame == ctx->object->frame_s) {
         if (props::extrapolation::value > 0) {
-            if (auto xforms = Extrapolate(frames, start, ctx); xforms.has_value()) {
+            if (auto xforms = Extrapolate(state.samples, start, ctx); xforms.has_value()) {
                 end = std::move(*xforms);
             } else {
                 aul::logger::Warning(L"No cached frame available for extrapolation");
@@ -680,8 +688,8 @@ void RestoreCache(std::vector<std::array<std::optional<FrameMapping>, 4uz>>& map
         } else {
             end = start;
         }
-    } else if (const auto& prev = frames[0uz]; prev.has_value()) {
-        if (auto xforms = BuildObjectTransforms(prev->sample, ctx); xforms.has_value()) {
+    } else if (const auto& prev = state.history[0uz].sample; prev.frame >= 0) {
+        if (auto xforms = BuildObjectTransforms(prev, ctx); xforms.has_value()) {
             end = std::move(*xforms);
         } else {
             return std::nullopt;

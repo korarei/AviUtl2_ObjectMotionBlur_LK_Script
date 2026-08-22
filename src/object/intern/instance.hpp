@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <optional>
 #include <vector>
 
 #include <Eigen/Core>
@@ -20,8 +19,13 @@ struct FrameMapping {
     Sample sample{};
 };
 
+struct State {
+    std::array<FrameMapping, 2uz> history{};
+    std::array<Sample, 2uz> samples{};
+};
+
 struct Instance {
-    std::vector<std::array<std::optional<FrameMapping>, 4uz>> mappings;
     bool is_restored = false;
+    std::vector<State> states;
 };
 }  // namespace blur::object

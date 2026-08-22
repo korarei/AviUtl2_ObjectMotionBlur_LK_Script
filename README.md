@@ -14,10 +14,10 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 
 ## 動作確認
 
-- [AviUtl ExEdit2 v2.1.0](https://spring-fragrance.mints.ne.jp/aviutl/)
+- [AviUtl ExEdit2 v2.1.6](https://spring-fragrance.mints.ne.jp/aviutl/)
 
 > [!CAUTION]
-> v2.1.0 以降必須．
+> v2.1.6 以降必須．
 
 ## 導入・更新・削除
 
@@ -36,6 +36,9 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 [こちら][catalog-url]から導入，更新，削除を行う．
 
 ## 使い方
+
+> [!WARNING]
+> 連続したレンダリングが必要である．非連続なフレーム取得や出力対象のシーンとは異なるシーンでの使用は正しく動作しない．
 
 ### ObjectMotionBlur_LK
 

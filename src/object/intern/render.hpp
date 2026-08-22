@@ -3,9 +3,12 @@
 #include <d3d11.h>
 
 #include <array>
+#include <concepts>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <system_error>
+#include <type_traits>
 
 namespace blur::object::renderer {
 using Float2x3 = std::array<std::array<float, 3uz>, 2uz>;
