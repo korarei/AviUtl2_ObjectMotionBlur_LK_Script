@@ -12,7 +12,7 @@
 - グループ制御に対応
 - 時間制御に仮対応
 - キャッシュ ID を Object ID から Effect ID に変更
-- `Geo Cache` を `Minimal` のみとし項目を削除
+- `Geo Cache` を常に有効として項目を削除
 - `Cache Purge` を本体のキャッシュ破棄と連動させ項目を削除
 - `Shutter::Phase` を追加
 - `Compositing::Falloff` を追加

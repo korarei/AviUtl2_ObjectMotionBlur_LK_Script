@@ -21,7 +21,7 @@ struct FrameMapping {
 
 struct State {
     std::array<FrameMapping, 2uz> history{};
-    std::array<Sample, 2uz> samples{};
+    std::vector<Sample> samples;
 };
 
 struct Instance {

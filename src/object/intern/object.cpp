@@ -346,7 +346,7 @@ template <typename T, typename F>
     return v0 - ClampVelocity(velocity, limit);
 }
 
-[[nodiscard]] std::optional<Object::Snapshot> Extrapolate(const std::array<Sample, 2uz>& samples,
+[[nodiscard]] std::optional<Object::Snapshot> Extrapolate(const std::vector<Sample>& samples,
                                                           const Object::Snapshot& zero, const FILTER_PROC_VIDEO* ctx) {
     namespace props = properties;
 
@@ -354,14 +354,15 @@ template <typename T, typename F>
 
     const int order = props::extrapolation::value;
 
-    if (order < 1 || order > 2 || order >= ctx->object->frame_total - 1) {
+    if (order < 1 || order > 2 || static_cast<size_t>(order) >= samples.size()) {
         return std::nullopt;
     }
 
+    const size_t count = static_cast<size_t>(order) + 1uz;
     std::array<Object::Snapshot, 3uz> snapshots{zero};
 
-    for (size_t i = 1uz; i < snapshots.size(); ++i) {
-        const auto& sample = samples[i - 1uz];
+    for (size_t i = 1uz; i < count; ++i) {
+        const auto& sample = samples[i];
 
         if (sample.frame < 0) {
             return std::nullopt;
@@ -378,8 +379,8 @@ template <typename T, typename F>
 
     size_t depth = 0uz;
 
-    for (const auto& snapshot : snapshots) {
-        depth = std::max(depth, snapshot.transforms.size());
+    for (size_t i = 0uz; i < count; ++i) {
+        depth = std::max(depth, snapshots[i].transforms.size());
     }
 
     Object::Snapshot snapshot{};
@@ -554,12 +555,15 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
 
             states.emplace_back();
             auto& state = states.back();
+            auto& samples = state.samples;
+
+            samples.assign(ctx->object->frame_total, Sample{});
 
             for (size_t k = 0uz; k < unit.size(); ++k) {
                 const auto& smp = unit[k];
 
                 if (smp.frame >= 0) {
-                    state.samples[k] = smp;
+                    samples[k + 1uz] = smp;
                 }
             }
         }
@@ -586,6 +590,9 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
     auto& curr = state.history[1uz];
     auto& prev = state.history[0uz];
 
+    auto& samples = state.samples;
+    samples.resize(ctx->object->frame_total, Sample{});
+
     {
         auto mapping = BuildFrameMapping(ctx);
 
@@ -609,15 +616,26 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
     if (curr.frame <= 0) {
         prev = FrameMapping{};
     } else if (curr.frame <= 2) {
-        const int pos = curr.frame - 1;
-        state.samples[pos] = curr.sample;
-        UpdatePersistent(pos, curr.sample, ctx);
+        UpdatePersistent(curr.frame - 1, curr.sample, ctx);
     }
 
-    if (prev.frame >= 0 && prev.frame != curr.frame) {
+    samples[curr.frame] = curr.sample;
+
+    if (prev.frame >= 0 && curr.frame >= 1 && prev.frame != curr.frame) {
         if (auto df = curr.frame - prev.frame; df != 1) {
             aul::logger::Warning(std::format(L"Non-consecutive frames are not supported: expected {}, got {}",
                                              prev.frame + 1, curr.frame));
+
+            if (const auto& smp = samples[curr.frame - 1]; smp.frame >= 0) {
+                prev = {
+                    .frame = curr.frame - 1,
+                    .sample = smp,
+                };
+
+                aul::logger::Info(L"Replaced previous frame with a recorded sample");
+
+                return instance;
+            }
 
             const auto span = ctx->object->frame_total - 1;
             df = std::clamp(df, -curr.frame, span - curr.frame);
@@ -633,14 +651,14 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
                         .transform =
                             {
                                 Lerp(curr.sample.transform.position, prev.sample.transform.position, t),
-                                Lerp(curr.sample.transform.scale, prev.sample.transform.scale, t),
+                                Lerp(curr.sample.transform.scale, prev.sample.transform.scale, t).cwiseMax(kEpsilon),
                                 std::lerp(curr.sample.transform.rotation, prev.sample.transform.rotation, t),
                             },
                         .frame = std::clamp(static_cast<int>(frame), 0, span),
                     },
             };
 
-            aul::logger::Warning(L"Previous data was replaced with an estimate");
+            aul::logger::Info(L"Replaced previous frame with an estimate");
         }
     }
 
@@ -997,13 +1015,18 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
     }
 
     if (props::should_print_diagnostics.value) {
-        aul::logger::Log(
+        const auto* const instance = static_cast<const Instance*>(ctx->userdata);
+        const auto memory =
+            sizeof(Instance) + (instance->states.size() * sizeof(State)) + (ctx->object->frame_total * sizeof(Sample));
+
+        aul::logger::Info(
             std::format(L"\n"
                         L"Effect ID       : {}\n"
                         L"Index           : {}\n"
                         L"Required Samples: {}\n"
-                        L"Samples         : {}\n",
-                        ctx->object->effect_id, ctx->object->index, required_samples, samples));
+                        L"Samples         : {}\n"
+                        L"Memory          : {} Bytes\n",
+                        ctx->object->effect_id, ctx->object->index, required_samples, samples, memory));
     }
 
     return true;
