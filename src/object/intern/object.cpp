@@ -121,6 +121,9 @@ FILTER_ITEM_FILE image(
     L"Tint::Image", L"",
     L"Image Files (*.bmp;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.webp)\0*.bmp;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.webp\0\0");
 FILTER_ITEM_TRACK layer(L"Tint::Layer", 0, -100, 100, 1, L"---");
+// v2.1.7 例外出る
+// FILTER_ITEM_HIDE_RULE hide_image(L"Tint::Image", L"Tint::Source", FILTER_ITEM_HIDE_RULE::OPERATOR::EQUAL, 1);
+// FILTER_ITEM_HIDE_RULE hide_layer(L"Tint::Layer", L"Tint::Source", FILTER_ITEM_HIDE_RULE::OPERATOR::EQUAL, 0);
 }  // namespace tint
 namespace compositing {
 FILTER_ITEM_GROUP name(L"Compositing", false);
@@ -1158,6 +1161,8 @@ inline constinit auto props = []<std::size_t... Is>(std::index_sequence<Is...>) 
         &properties::tint::source::control,
         &properties::tint::image,
         &properties::tint::layer,
+        // &properties::tint::hide_image,
+        // &properties::tint::hide_layer,
         &properties::compositing::name,
         &properties::compositing::mix,
         &properties::compositing::alpha_mode::control,
