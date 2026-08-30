@@ -85,8 +85,7 @@ auto& value = control.value;
 }  // namespace layer_reference
 namespace view {
 FILTER_ITEM_SELECT::ITEM contents[] = {
-    {L"Processed", 0}, {L"Flow", 1}, {L"Nearest Propagated Flow", 2}, {L"Alternative Propagated Flow", 3},
-    {nullptr, -1},
+    {L"Processed", 0}, {L"Flow", 1}, {L"Nearest Propagated Flow", 2}, {L"Distinct Propagated Flow", 3}, {nullptr, -1},
 };
 FILTER_ITEM_SELECT control(L"View", 0, contents);
 auto& value = control.value;

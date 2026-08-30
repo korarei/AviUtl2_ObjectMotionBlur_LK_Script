@@ -29,6 +29,10 @@ inline float2 UnpackOrigin(float packed) {
     return float2(min(uint2(origin & 0xffffu, origin >> 16u), resolution - 1u)) + 0.5;
 }
 
+inline float2 EvaluateStrokeEnd(float4 flow) {
+    return UnpackOrigin(flow.w) + flow.xy;
+}
+
 inline float IsInside(int2 loc) {
     const float2 p = float2(loc);
     const float2 inside = step(0.0, p) * step(p, float2(resolution - 1u));
@@ -39,8 +43,8 @@ inline bool IsSameOrigin(float lhs, float rhs) {
     return asuint(lhs) == asuint(rhs);
 }
 
-inline bool IsDifferentMotion(float2 lhs, float2 rhs) {
-    const float2 delta = lhs - rhs;
+inline bool IsDifferentMotion(float4 lhs, float4 rhs) {
+    const float2 delta = EvaluateStrokeEnd(lhs) - EvaluateStrokeEnd(rhs);
     return dot(delta, delta) >= kMotionDifferenceSq;
 }
 
@@ -72,18 +76,25 @@ inline void UpdateSlots(inout float4 first, inout float4 second, inout float2 di
     if (cand_dist < dists.x) {
         const float4 first_prev = first;
         const float dist_prev = dists.x;
+        const float4 second_prev = second;
+        const float second_dist_prev = dists.y;
 
         first = cand;
         dists.x = cand_dist;
+        second = first;
+        dists.y = kInvalidDistanceSq;
 
-        if (dist_prev < kInvalidDistanceSq && IsDifferentMotion(first.xy, first_prev.xy)) {
+        if (dist_prev < kInvalidDistanceSq && IsDifferentMotion(first, first_prev)) {
             second = first_prev;
             dists.y = dist_prev;
-        } else if (dists.y < kInvalidDistanceSq && !IsDifferentMotion(first.xy, second.xy)) {
-            second = first;
-            dists.y = kInvalidDistanceSq;
         }
-    } else if (IsDifferentMotion(first.xy, cand.xy) && !IsSameOrigin(cand.w, second.w) && cand_dist < dists.y) {
+
+        if (second_dist_prev < dists.y && !IsSameOrigin(second_prev.w, first.w) &&
+            IsDifferentMotion(first, second_prev)) {
+            second = second_prev;
+            dists.y = second_dist_prev;
+        }
+    } else if (IsDifferentMotion(first, cand) && !IsSameOrigin(cand.w, second.w) && cand_dist < dists.y) {
         second = cand;
         dists.y = cand_dist;
     }

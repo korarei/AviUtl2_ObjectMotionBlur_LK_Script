@@ -1,4 +1,4 @@
-# ObjectMotionBlur_LK
+# MotionBlur_K
 
 ![GitHub License](https://img.shields.io/github/license/korarei/AviUtl2_ObjectMotionBlur_LK_Script)
 ![GitHub Last commit](https://img.shields.io/github/last-commit/korarei/AviUtl2_ObjectMotionBlur_LK_Script)
@@ -10,14 +10,16 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 
 以下の機能が追加される．
 
-- ぼかし\\ObjectMotionBlur_LK: オブジェクトに 2D モーションブラーをかける
+- ぼかし\ObjectMotionBlur_LK: オブジェクトに 2D モーションブラーをかける
+- ぼかし\SceneMotionBlur_K: オプティカルフローに基づき画面全体にモーションブラーをかける
 
 ## 動作確認
 
 - [AviUtl ExEdit2 v2.1.7](https://spring-fragrance.mints.ne.jp/aviutl/)
 
 > [!CAUTION]
-> v2.1.7 以降必須．
+> - v2.1.7 以降必須．
+> - `SceneMotionBlur_K` の利用には Turing 世代以降の NVIDIA GPU (GeForce RTX シリーズ / GTX 166x シリーズ等) が必要．
 
 ## 導入・更新・削除
 
@@ -135,6 +137,72 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
     - Relative: 相対参照．
   - Resize: ブラーが見切れないように画像サイズを変更する．
   - Diagnostics: コンソールに情報を表示する．
+
+  </details>
+
+### SceneMotionBlur_K
+
+初期ラベル: `ぼかし`
+
+連続フレーム間のオプティカルフロー (ピクセル単位の動きベクトル) を推定し，映像全体にモーションブラーをかける．
+
+> [!TIPS]
+> オブジェクトを分割するか中間点を追加することでシーンチェンジを明示すること．
+
+> [!IMPORTANT]
+> 出力シーンとこのエフェクトが存在するシーンを同じものにすること．(AviUtl2 の仕様上，必ずフレームジャンプが発生するため．)
+
+#### パラメータ
+
+- <details>
+  <summary>Shutter</summary>
+
+  - Shutter::Angle: ブラーの範囲．360度で1フレーム移動量と等しい．
+  - Shutter::Falloff::Edge: 減衰させる範囲．
+    - Trailing: 移動元の方向に減衰．
+    - Leading: 移動先の方向に減衰．
+    - Symmetric: 両方向に減衰．
+  - Shutter::Falloff::Amount: 減衰の量．
+
+  </details>
+
+- <details>
+  <summary>Sampling</summary>
+
+  - Sampling::Viewport::Sample Limit: プレビューでの描画精度．サンプル数の上限値を設定する．
+  - Sampling::Render::Sample Limit: 出力時の描画精度．サンプル数の上限値を設定する．
+
+  </details>
+
+- <details>
+  <summary>Compositing</summary>
+
+  - Compositing::Mix: オリジナル画像とブラーを合成する．
+
+  </details>
+
+- <details>
+  <summary>Depth</summary>
+
+  - Depth::Layer: 深度マップとして参照するレイヤーの番号．
+
+  </details>
+
+- <details>
+  <summary>Additional Options</summary>
+
+  - Preset: NVIDIA Optical Flow のプリセット．
+    - Slow: 高品質．
+    - Medium: 標準．
+    - Fast: 高速．
+  - Layer Reference: レイヤーの参照方法．
+    - Absolute: 絶対参照．
+    - Relative: 相対参照．
+  - View: 描画・デバッグ用表示モード．
+    - Processed: ブラー処理結果．
+    - Flow: 推定されたオプティカルフロー．
+    - Nearest Propagated Flow: 最近傍伝播フロー．
+    - Distinct Propagated Flow: 異なるモーションの伝播フロー．
 
   </details>
 

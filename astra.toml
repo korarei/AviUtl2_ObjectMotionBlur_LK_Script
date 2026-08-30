@@ -44,6 +44,7 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 以下の機能が追加される．
 
 - ぼかし\\ObjectMotionBlur_LK: オブジェクトに 2D モーションブラーをかける
+- ぼかし\\SceneMotionBlur_K: オプティカルフローに基づき画面全体にモーションブラーをかける
 """
 
 [[release.contents.extensions]]
