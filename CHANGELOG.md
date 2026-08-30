@@ -15,7 +15,9 @@
 - `Geo Cache` を常に有効として項目を削除
 - `Cache Purge` を本体のキャッシュ破棄と連動させ項目を削除
 - `Shutter::Phase` を追加
-- `Compositing::Falloff` を追加
+- `Shutter::Falloff` を追加
+- `Tint` を追加
+- `Compositing::Alpha Mode` を追加
 - `Extrapolation` の挙動を調整
 - `Mix` の挙動を調整
 - 拡大動作時ブラーがかからない問題の修正

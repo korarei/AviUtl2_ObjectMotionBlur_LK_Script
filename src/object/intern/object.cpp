@@ -7,6 +7,7 @@
 #include <format>
 #include <limits>
 #include <numbers>
+#include <string_view>
 #include <vector>
 
 #include <Eigen/Geometry>
@@ -79,6 +80,20 @@ namespace shutter {
 FILTER_ITEM_GROUP name(L"Shutter", true);
 FILTER_ITEM_TRACK angle(L"Shutter::Angle", 180.0, 0.0, 720.0, 0.01);
 FILTER_ITEM_TRACK phase(L"Shutter::Phase", -90.0, -360.0, 360.0, 0.01);
+namespace falloff {
+FILTER_ITEM_SEPARATOR name(L"Falloff");
+namespace edge {
+FILTER_ITEM_SELECT::ITEM contents[] = {
+    {L"Trailing", 0},
+    {L"Leading", 1},
+    {L"Symmetric", 2},
+    {nullptr, -1},
+};
+FILTER_ITEM_SELECT control(L"Shutter::Falloff::Edge", 2, contents);
+auto& value = control.value;
+}  // namespace edge
+FILTER_ITEM_TRACK amount(L"Shutter::Falloff::Amount", 2.0, 0.0, 100.0, 0.01);
+}  // namespace falloff
 }  // namespace shutter
 namespace sampling {
 FILTER_ITEM_GROUP name(L"Sampling", false);
@@ -91,10 +106,34 @@ FILTER_ITEM_SEPARATOR name(L"Render");
 FILTER_ITEM_TRACK sample_limit(L"Sampling::Render::Sample Limit", 512.0, 2.0, 4096.0, 1.0);
 }  // namespace render
 }  // namespace sampling
+namespace tint {
+FILTER_ITEM_GROUP name(L"Tint", false);
+namespace source {
+FILTER_ITEM_SELECT::ITEM contents[] = {
+    {L"Image", 0},
+    {L"Layer", 1},
+    {nullptr, -1},
+};
+FILTER_ITEM_SELECT control(L"Tint::Source", 0, contents);
+auto& value = control.value;
+}  // namespace source
+FILTER_ITEM_FILE image(
+    L"Tint::Image", L"",
+    L"Image Files (*.bmp;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.webp)\0*.bmp;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.webp\0\0");
+FILTER_ITEM_TRACK layer(L"Tint::Layer", 0, -100, 100, 1, L"---");
+}  // namespace tint
 namespace compositing {
 FILTER_ITEM_GROUP name(L"Compositing", false);
 FILTER_ITEM_TRACK mix(L"Compositing::Mix", 100.0, 0.0, 100.0, 0.01);
-FILTER_ITEM_TRACK falloff(L"Compositing::Falloff", 0.0, 0.0, 100.0, 0.01);
+namespace alpha_mode {
+FILTER_ITEM_SELECT::ITEM contents[] = {
+    {L"Alpha Blending", 0},
+    {L"Alpha Hashed", 1},
+    {nullptr, -1},
+};
+FILTER_ITEM_SELECT control(L"Compositing::Alpha Mode", 0, contents);
+auto& value = control.value;
+}  // namespace alpha_mode
 }  // namespace compositing
 FILTER_ITEM_GROUP additional_options(L"Additional Options", false);
 namespace extrapolation {
@@ -102,6 +141,15 @@ FILTER_ITEM_SELECT::ITEM contents[] = {{L"None", 0}, {L"Linear", 1}, {L"Quadrati
 FILTER_ITEM_SELECT control(L"Extrapolation", 2, contents);
 auto& value = control.value;
 }  // namespace extrapolation
+namespace layer_reference {
+FILTER_ITEM_SELECT::ITEM contents[] = {
+    {L"Absolute", 0},
+    {L"Relative", 1},
+    {nullptr, -1},
+};
+FILTER_ITEM_SELECT control(L"Layer Reference", 0, contents);
+auto& value = control.value;
+}  // namespace layer_reference
 FILTER_ITEM_CHECK should_resize(L"Resize", true);
 FILTER_ITEM_CHECK should_print_diagnostics(L"Diagnostics", false);
 namespace internal {
@@ -950,10 +998,56 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 
         ctx->set_image_data(nullptr, static_cast<int>(size.x()), static_cast<int>(size.y()));
 
+        {
+            static constexpr PIXEL_RGBA clear{0, 0, 0, 0};
+
+            if (props::tint::source::value == 0) {
+                const std::wstring_view path{props::tint::image.value};
+
+                if (!path.empty()) {
+                    if (!ctx->edit->is_support_media_file(props::tint::image.value, false)) {
+                        aul::logger::Error(std::format(L"Unsupported image file format: '{}'", path));
+                        return false;
+                    }
+
+                    const auto src = std::format(L"image:{}", path);
+                    if (!ctx->copy_image_resource(L"resource:map", src.c_str())) {
+                        aul::logger::Error(std::format(L"Failed to copy image '{}' to 'resource:map'", path));
+                        return false;
+                    }
+                } else {
+                    ctx->create_image_resource(L"resource:map", &clear, 1, 1);
+                }
+            } else {
+                int map_layer = static_cast<int>(props::tint::layer.value);
+                if (props::layer_reference::value == 1) {
+                    map_layer += ctx->object->effect_layer + 1;
+                }
+
+                --map_layer;
+
+                if (map_layer < 0 || map_layer == ctx->object->layer) {
+                    ctx->create_image_resource(L"resource:map", &clear, 1, 1);
+                } else if (ctx->get_image_object(map_layer, 0.0) == nullptr) {
+                    aul::logger::Error(std::format(L"No object exists at layer {}, frame {}", map_layer + 1,
+                                                   ctx->object->frame_s + ctx->object->frame));
+                    return false;
+                } else {
+                    const auto src = std::format(L"layer:{}+", map_layer);
+
+                    if (!ctx->copy_image_resource(L"resource:map", src.c_str())) {
+                        aul::logger::Error(std::format(L"Failed to copy image '{}' to image 'resource:map'", src));
+                        return false;
+                    }
+                }
+            }
+        }
+
         auto* const dst = ctx->get_image_texture2d();
         auto* const img = ctx->get_image_resource_texture2d(L"resource:image");
+        auto* const map = ctx->get_image_resource_texture2d(L"resource:map");
 
-        if (img == nullptr || dst == nullptr) {
+        if (img == nullptr || dst == nullptr || map == nullptr) {
             aul::logger::Error(L"Failed to get 'ID3D11Texture2D' pointers");
             return false;
         }
@@ -961,12 +1055,16 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         thread_local std::vector<renderer::Float2x3> trajectory;
         CreateTrajectory(*object, samples, trajectory);
 
+        int map_w, _;
+        ctx->get_image_resource_size(L"resource:map", &map_w, &_);
+
         const float mix = std::clamp(static_cast<float>(props::compositing::mix.value) * 0.01f, 0.0f, 1.0f) * 2.0f;
-        const float falloff = std::max(static_cast<float>(props::compositing::falloff.value) * 0.01f, 0.0f);
-        const float decay = std::pow(std::max(1.0f - falloff, kEpsilon), 1.0f / static_cast<float>(samples));
+        const float falloff = std::clamp(static_cast<float>(props::shutter::falloff::amount.value) * 0.01f, 0.0f, 1.0f);
+        const float edge = std::max(falloff, kEpsilon);
 
         const renderer::Target target{
             .image = img,
+            .map = map,
             .trajectory = trajectory,
         };
 
@@ -1000,8 +1098,15 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                     std::min(2.0f - mix, 1.0f),
                     std::min(mix, 1.0f),
                 },
-            .decay = decay,
+            .falloff =
+                {
+                    props::shutter::falloff::edge::value == 0 ? kEpsilon : edge,
+                    props::shutter::falloff::edge::value == 1 ? kEpsilon : edge,
+                },
             .samples = samples,
+            .map_inset = 0.5f / static_cast<float>(map_w),
+            .alpha_mode = static_cast<float>(props::compositing::alpha_mode::value),
+            .seed = static_cast<float>(size.x() * size.y()),
         };
 
         const auto ec = renderer::Render(dst, [&target, &param](const renderer::Context& ctx) -> std::error_code {
@@ -1041,16 +1146,24 @@ inline constinit auto props = []<std::size_t... Is>(std::index_sequence<Is...>) 
         &properties::shutter::name,
         &properties::shutter::angle,
         &properties::shutter::phase,
+        &properties::shutter::falloff::name,
+        &properties::shutter::falloff::edge::control,
+        &properties::shutter::falloff::amount,
         &properties::sampling::name,
         &properties::sampling::viewport::name,
         &properties::sampling::viewport::sample_limit,
         &properties::sampling::render::name,
         &properties::sampling::render::sample_limit,
+        &properties::tint::name,
+        &properties::tint::source::control,
+        &properties::tint::image,
+        &properties::tint::layer,
         &properties::compositing::name,
         &properties::compositing::mix,
-        &properties::compositing::falloff,
+        &properties::compositing::alpha_mode::control,
         &properties::additional_options,
         &properties::extrapolation::control,
+        &properties::layer_reference::control,
         &properties::should_resize,
         &properties::should_print_diagnostics,
         &properties::internal::revision,

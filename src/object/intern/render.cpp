@@ -136,7 +136,7 @@ namespace blur::object::renderer {
 
 // subframe_xforms は empty を許さず，あまりにも大きなサイズ (2 GiB?) も認めない．呼び出し側に責任．
 std::error_code Context::Draw(const Target& target, const Parameter& param) const {
-    static constexpr ID3D11ShaderResourceView* null_srvs[2uz] = {nullptr, nullptr};
+    static constexpr ID3D11ShaderResourceView* null_srvs[3uz] = {nullptr, nullptr, nullptr};
 
     HRESULT result;
 
@@ -203,7 +203,13 @@ std::error_code Context::Draw(const Target& target, const Parameter& param) cons
         return d3d::ToErrorCode(result).value_or(d3d::Error::kCreateShaderResourceViewFailed);
     }
 
-    ID3D11ShaderResourceView* const inputs[] = {img_srv.Get(), d3d::trajectory.srv.Get()};
+    ComPtr<ID3D11ShaderResourceView> map_srv;
+    result = d3d::device->CreateShaderResourceView(target.map, nullptr, &map_srv);
+    if (FAILED(result)) {
+        return d3d::ToErrorCode(result).value_or(d3d::Error::kCreateShaderResourceViewFailed);
+    }
+
+    ID3D11ShaderResourceView* const inputs[] = {img_srv.Get(), map_srv.Get(), d3d::trajectory.srv.Get()};
 
     ComPtr<ID3D11RenderTargetView> rtv;
     result = d3d::device->CreateRenderTargetView(dst_, nullptr, &rtv);
@@ -223,13 +229,8 @@ std::error_code Context::Draw(const Target& target, const Parameter& param) cons
         .MaxDepth = 1.0f,
     };
 
-    d3d::ctx->IASetInputLayout(nullptr);
-    d3d::ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    d3d::ctx->VSSetShader(d3d::vs.Get(), nullptr, 0u);
-
     d3d::ctx->PSSetShader(d3d::ps.Get(), nullptr, 0u);
-    d3d::ctx->PSSetShaderResources(0u, 2u, inputs);
+    d3d::ctx->PSSetShaderResources(0u, 3u, inputs);
     d3d::ctx->PSSetSamplers(0u, 1u, d3d::smp.GetAddressOf());
 
     d3d::ctx->OMSetRenderTargets(1u, rtv.GetAddressOf(), nullptr);
@@ -239,7 +240,7 @@ std::error_code Context::Draw(const Target& target, const Parameter& param) cons
     d3d::ctx->Draw(3u, 0u);
 
     d3d::ctx->OMSetRenderTargets(0u, nullptr, nullptr);
-    d3d::ctx->PSSetShaderResources(0u, 2u, null_srvs);
+    d3d::ctx->PSSetShaderResources(0u, 3u, null_srvs);
 
     return {};
 }
@@ -259,6 +260,11 @@ std::error_code Render(ID3D11Texture2D* dst, FunctionRef callback) {
     d3d::ctx->RSSetState(nullptr);
 
     d3d::ctx->GSSetShader(nullptr, nullptr, 0u);
+
+    d3d::ctx->IASetInputLayout(nullptr);
+    d3d::ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    d3d::ctx->VSSetShader(d3d::vs.Get(), nullptr, 0u);
 
     if (ec = callback(CreateContext(dst)); ec != std::error_code{}) {
         Release();

@@ -14,10 +14,10 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 
 ## 動作確認
 
-- [AviUtl ExEdit2 v2.1.6](https://spring-fragrance.mints.ne.jp/aviutl/)
+- [AviUtl ExEdit2 v2.1.7](https://spring-fragrance.mints.ne.jp/aviutl/)
 
 > [!CAUTION]
-> v2.1.6 以降必須．
+> v2.1.7 以降必須．
 
 ## 導入・更新・削除
 
@@ -87,6 +87,8 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 
   - Shutter::Angle: ブラーの範囲．360度で1フレーム移動量と等しい．
   - Shutter::Phase: ブラーの位置． `Shutter::Angle` * -0.5 で中央．
+  - Shutter::Falloff::Edge: 減衰させる範囲．
+  - Shutter::Falloff::Amount: 減衰の量．
 
   </details>
 
@@ -99,10 +101,27 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
   </details>
 
 - <details>
+  <summary>Tint</summary>
+
+  - Tint::Source: チントで使用するグラデーションマップの参照元．
+    - Image: 画像ファイル．
+    - Layer: レイヤー．
+  - Tint::Image: グラデーションマップ画像のパス．
+  - Tint::Layer: グラデーションマップレイヤーの番号．
+
+> [!NOTE]
+> - 横: 輝度
+> - 縦: ブラー進捗
+
+  </details>
+
+- <details>
   <summary>Compositing</summary>
 
   - Compositing::Mix: オリジナル画像とブラーを合成する． `50.00` で標準モーションブラーの `残像` に近い挙動になる．
-  - Compositing::Falloff: ブラーウェイトの勾配． `100.00` にすると標準モーションブラーエフェクトに近い挙動になる．
+  - Compositing::Alpha Mode: 出力のアルファ情報．
+    - Alpha Blending: アルファブレンド．
+    - Alpha Hashed: アルファハッシュ．
 
   </details>
 
@@ -113,6 +132,9 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
     - None (計算しない)
     - Linear (1次補間)
     - Quadratic (2次補間)
+  - Layer Reference: レイヤーの参照方法．
+    - Absolute: 絶対参照．
+    - Relative: 相対参照．
   - Resize: ブラーが見切れないように画像サイズを変更する．
   - Diagnostics: コンソールに情報を表示する．
 

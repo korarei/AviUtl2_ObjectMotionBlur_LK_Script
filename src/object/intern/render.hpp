@@ -17,6 +17,7 @@ static_assert(sizeof(Float2x3) == sizeof(float) * 6uz);
 
 struct Target {
     ID3D11Texture2D* image;
+    ID3D11Texture2D* map;
     std::span<const Float2x3> trajectory;
 };
 
@@ -25,8 +26,11 @@ struct alignas(16) Parameter {
     float origin[2uz] = {0.0f, 0.0f};
     float texel[2uz] = {1.0f, 1.0f};
     float mix[2uz] = {0.0f, 1.0f};
-    float decay = 1.0f;
+    float falloff[2uz] = {0.0f, 0.0f};
     int32_t samples = 1;
+    float map_inset = 0.0f;
+    float alpha_mode = 0.0f;
+    float seed = 0.0f;
 };
 
 class Context {

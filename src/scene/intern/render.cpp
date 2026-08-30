@@ -1088,6 +1088,7 @@ std::error_code Render(ID3D11Texture2D* dst, FunctionRef callback) {
 
     d3d::ctx->IASetInputLayout(nullptr);
     d3d::ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
     d3d::ctx->VSSetShader(d3d::vs.Get(), nullptr, 0u);
 
     if (ec = callback(CreateContext(dst)); ec != std::error_code{}) {
