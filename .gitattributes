@@ -1,4 +1,4 @@
-* text=auto
+* text eol=lf
 
 *.obj text eol=crlf linguist-language=Lua working-tree-encoding=cp932
 *.anm text eol=crlf linguist-language=Lua working-tree-encoding=cp932

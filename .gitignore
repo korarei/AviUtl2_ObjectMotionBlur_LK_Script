@@ -1,4 +1,8 @@
-.vscode/
+**/.vscode/
+**/.cache/
+**/.venv/
+**/vcpkg/
 **/build/
 **/release/
-**/aviutl2_sdk/
+**/api.h
+**/compile_commands.json

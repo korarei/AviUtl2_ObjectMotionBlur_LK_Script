@@ -1,52 +1,61 @@
-# ObjectMotionBlur_LK
+# MotionBlur_K
 
 ![GitHub License](https://img.shields.io/github/license/korarei/AviUtl2_ObjectMotionBlur_LK_Script)
 ![GitHub Last commit](https://img.shields.io/github/last-commit/korarei/AviUtl2_ObjectMotionBlur_LK_Script)
 ![GitHub Downloads](https://img.shields.io/github/downloads/korarei/AviUtl2_ObjectMotionBlur_LK_Script/total)
-![GitHub Release](https://img.shields.io/github/v/release/korarei/AviUtl2_ObjectMotionBlur_LK_Script)
+[![GitHub Release][releases-badge]][releases-url]
+[![AviUtl2 Catalog][catalog-badge]][catalog-url]
 
-オブジェクトにモーションブラーをかけるスクリプト．
+AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 
-[ダウンロードはこちらから](https://github.com/korarei/AviUtl2_ObjectMotionBlur_LK_Script/releases)
+以下の機能が追加される．
+
+- ぼかし\ObjectMotionBlur_LK: オブジェクトに 2D モーションブラーをかける
+- ぼかし\SceneMotionBlur_K: オプティカルフローに基づき画面全体にモーションブラーをかける
 
 ## 動作確認
 
-- [AviUtl ExEdit2 beta22](https://spring-fragrance.mints.ne.jp/aviutl/)
+- [AviUtl ExEdit2 v2.1.7](https://spring-fragrance.mints.ne.jp/aviutl/)
 
 > [!CAUTION]
-> beta20以降必須．
+> - v2.1.7 以降必須．
+> - `SceneMotionBlur_K` の利用には Turing 世代以降の NVIDIA GPU (GeForce RTX シリーズ / GTX 166x シリーズ等) が必要．
 
-## 導入・削除・更新
+## 導入・更新・削除
 
-初期配置場所は`ぼかし`である．
+### パッケージファイルからインストール
 
-`オブジェクト追加メニューの設定`から`ラベル`を変更することで任意の場所へ移動可能．
+#### 導入・更新
 
-### 導入
+[こちら][releases-url]からダウンロードした `*.au2pkg.zip` をAviUtl2にD&D．
 
-1.  同梱の`*.anm2`と`*.mod2`を`%ProgramData%`内の`aviutl2\Script`フォルダまたはその子フォルダに入れる．
+#### 削除
 
-`beta4`以降では`aviutl2.exe`と同じ階層内の`data\Script`フォルダ内でも可．
+パッケージ情報からアンインストールする．
 
-### 削除
+### [AviUtl2 カタログ](https://github.com/Neosku/aviutl2-catalog)からインストール
 
-1.  導入したものを削除する．
-
-### 更新
-
-1.  導入したものを上書きする．
+[こちら][catalog-url]から導入，更新，削除を行う．
 
 ## 使い方
 
-オブジェクトにこのスクリプトを追加することで，トラックバーによる移動に関して線形的にフレーム補間したモーションブラーをかける．
+> [!WARNING]
+> 連続したレンダリングが必要である．
 
-また，追加エフェクト，スクリプトによる座標変化はデータを保持することにより計算で扱うことが可能である． 
+### ObjectMotionBlur_LK
 
-### 対象項目
+初期ラベル: `ぼかし`
 
-出力項目 (標準描画等) の設定値は以下の7項目が対象．
+トラックバーによる二次元座標変換に関して線形的にフレーム補間したモーションブラーをかける．
 
-拡大率と縦横比はX軸方向とY軸方向の拡大率として取得している．
+> [!NOTE]
+> 非連続なフレームが処理された場合は全体キャッシュからデータを取得する．データが存在しない場合は内挿計算によって推定する．
+
+#### 対象項目
+
+出力項目 (標準描画等) の設定値は以下の 7 項目が対象．
+
+拡大率と縦横比は X 軸方向と Y 軸方向の拡大率として取得している．
 
 - X
 - Y
@@ -56,9 +65,7 @@
 - 拡大率
 - 縦横比
 
-オブジェクトの設定値 (基本効果やスクリプトなどの追加エフェクトによるもの) は以下の7項目が対象．
-
-これらの項目は`Geo Cache`が`Full`か`Minimal`の時に有効．
+オブジェクトの設定値 (フィルタ効果などのエフェクトによるもの) は以下の 7 項目が対象．
 
 - obj.ox
 - obj.oy
@@ -68,300 +75,154 @@
 - obj.sx
 - obj.sy
 
-### パラメータ
+グループ制御の設定値は以下の 4 項目が対象．
 
-#### Shutter Angle
+- X
+- Y
+- Z軸回転
+- 拡大率
 
-ブラー幅 (360度で1フレーム移動量と等しい)．
+#### パラメータ
 
-初期値は`180.0`で一般的な値を採用している．
+- <details>
+  <summary>Shutter</summary>
 
-#### Sample Limit
+  - Shutter::Angle: ブラーの範囲．360度で1フレーム移動量と等しい．
+  - Shutter::Phase: ブラーの位置． `Shutter::Angle` * -0.5 で中央．
+  - Shutter::Falloff::Edge: 減衰させる範囲．
+  - Shutter::Falloff::Amount: 減衰の量．
 
-描画精度．サンプル数の上限値を設定する．
+  </details>
 
-上げると描画が綺麗になる代わりに重くなる．一方，下げると描画が粗くなる代わりに軽くなる．
-  
-必要サンプル数はダイアログ内の`Print Information`を有効にするとコンソールで確認できる．
+- <details>
+  <summary>Sampling</summary>
 
-初期値は`256`とやや小さい値にしている．
+  - Sampling::Viewport::Sample Limit: プレビューでの描画精度．サンプル数の上限値を設定する．
+  - Sampling::Render::Sample Limit: 出力時の描画精度．サンプル数の上限値を設定する．
 
-> [!NOTE]
-> `2`未満のときブラーは表示されない．
+  </details>
 
-#### Preview Limit
+- <details>
+  <summary>Tint</summary>
 
-プレビュー時の描画精度．`0`以外の値にすることで，編集時に描画制度を下げて軽量にすることができる．出力時は`Sample Limit`の値になる．
+  - Tint::Source: チントで使用するグラデーションマップの参照元．
+    - Image: 画像ファイル．
+    - Layer: レイヤー．
+  - Tint::Image: グラデーションマップ画像のパス．
+  - Tint::Layer: グラデーションマップレイヤーの番号．
 
-初期値は`0`でこの機能を無効にしている．
+  グラデーションマップは横軸が輝度，縦軸がブラー進捗．
 
-#### Extrapolation
+  </details>
 
-0フレームより前を仮想的に計算する．計算方法として以下の3つある．
+- <details>
+  <summary>Compositing</summary>
 
-- None (計算しない)
-- Linear (1次補間)
-- Quadratic (2次補間)
+  - Compositing::Mix: オリジナル画像とブラーを合成する．
+  - Compositing::Alpha Mode: 出力のアルファ情報．
+    - Alpha Blending: アルファブレンド．
+    - Alpha Hashed: アルファハッシュ．
 
-初期値は`Quadratic`
+  </details>
 
-#### Resize
+- <details>
+  <summary>Additional Options</summary>
 
-サイズを変更．`ON`でブラーが見切れないようにする．
+  - Extrapolation: 0 フレームより前を仮想的に計算する．
+    - None (計算しない)
+    - Linear (1次補間)
+    - Quadratic (2次補間)
+  - Layer Reference: レイヤーの参照方法．
+    - Absolute: 絶対参照．
+    - Relative: 相対参照．
+  - Resize: ブラーが見切れないように画像サイズを変更する．
+  - Diagnostics: コンソールに情報を表示する．
 
-初期値は`ON`
+  </details>
 
-#### Mix
+### SceneMotionBlur_K
 
-元画像を元の位置に描画する．(アルファブレンド)
+初期ラベル: `ぼかし`
 
-かつての標準モーションブラーエフェクトの`残像`のようなもの．
-
-初期値は`0.0`
-
-#### Geo Cache
-
-エフェクトによる座標変化を計算に入れるかどうかを指定する．保存方法は以下の3つ．
-
-- None (保存しない)
-- Full (全フレーム保存する)
-- Minimal (必要最低限だけ保存する)
-
-初期値は`None`
-
-#### Cache Purge
-
-キャッシュ削除に関して以下の4つから設定する．
-
-- None (特に何も行わない)
-- Auto (このオブジェクトの最終フレームでこのオブジェクトのデータのみ削除する)
-- All (スクリプトが読み込まれた時，すべて削除する)
-- Active (スクリプトが読み込まれた時，このオブジェクトのデータのみ削除する)
-
-初期値は`None`
-
-#### Print Information
-
-コンソールに情報を表示する．
-
-表示される情報は以下のとおり
-
-- Object ID (所謂`obj.id`．キャッシュはObject IDごとに保存される．)
-- Index (所謂`obj.index`．個別オブジェクトのインデックス．)
-- Required Samples (必要なサンプル数．これを目安に`Sample Limit`を設定してほしい．)
-
-初期値は`OFF`
-
-#### PI
-
-パラメータインジェクション．
-
-```lua
-{
-  shutter_angle = 180.0, -- 360.0を超える値も指定可能 (ただ伸ばすだけ)
-  render_sample_limit = 256,
-  preview_sample_limit = 0,
-  extrapolation = 2,
-  resize = true, -- booleanも可
-  geo_cache = 0,
-  cache_purge = 0,
-  mix = 0.0,
-  print_info = false, -- booleanも可
-}
-```
-
-`{}`は既に挿入済みであるため，PI項目では中身のみ記載する．
-
-## スクリプトモジュール
-
-### version 関数
-
-スクリプトモジュールのバージョンを返す．
-
-#### 戻り値
-
-1. `version` (number) : バージョン情報 
-
-### compute_motion 関数
-
-座標データから同次変換行列等を求める．
-
-> [!CAUTION]
-> `obj.num`が1以上の場合にのみ使用可能．
-
-#### 引数
-
-1. `params` (table) : 設定値
-1. `context` (table) : オブジェクトの情報等
-1. `xform_curr` (table) : 現在の描画基準座標
-1. `xform_prev` (table) : 過去の描画基準座標
-1. `geo_curr` (table) : 現在のオブジェクト設定値 (座標)
-1. `data` (userdata, option) : 汎用データ (64バイト)
-1. `size` (number, option) : 汎用データサイズ
-
-> [!IMPORTANT]
-> `data`を渡すときは必ず`size`を渡す必要がある．
-
-#### 戻り値
-
-1. `margin` (table) : 領域拡張量
-1. `samples` (number) : サンプリング数
-1. `xform_matrix` (table) : 2つ目のサンプリング地点までの同次変換行列の逆行列
-1. `scaling_matrix` (table) : 2つ目のサンプリング地点でのスケーリング行列の逆行列
-1. `drift_vector` (table) : 2つ目のサンプリング地点での中心座標ずれの逆ベクトル
-
-> [!NOTE]
-> 行列，ベクトルは列優先で一次元配列である．
->
-> 行列は3次元正方行列，ベクトルは3次元ベクトルである．
->
-> `samples`が1のとき，単位行列，0ベクトルとなる．
+連続フレーム間のオプティカルフロー (ピクセル単位の動きベクトル) を推定し，映像全体にモーションブラーをかける．
 
 > [!TIP]
-> `xform_matrix`，`scaling_matrix`，`drift_vector`について．
->
-> 現在位置 $\Sigma_0$ から2つ目のサンプリング位置 $\Sigma_1$ への変換を ${}^0T_1$ とし， $\Sigma_1$ からターゲット座標 $\Sigma_t$ への変換を ${}^1S_t$ とする．
->
-> 中心 $\boldsymbol{V}$ とズレ量 $\boldsymbol{d}$ を用いると， $\Sigma_t$ での中心座標 ${}^t\boldsymbol{V}$ は以下のように表現できる．
->
-> $$
-> {}^t\boldsymbol{V} = \boldsymbol{V} + \boldsymbol{d}
-> $$
->
-> このとき， $\Sigma_0$ から見た ${}^t\boldsymbol{V}$ である ${}^0\boldsymbol{V}$ は以下のように表現できる．
->
-> $$
-> {}^0\boldsymbol{V} = {}^0T_1 {}^1S_t {}^t\boldsymbol{V}
-> $$
->
-> 以上よりシェーダーではこの逆変換を行えばよいので，
->
-> $$
-> {}^t\boldsymbol{V} = {}^1S_t^{-1} {}^0T_1^{-1} {}^0\boldsymbol{V} = {}^tS_1 {}^1T_0 {}^0\boldsymbol{V}
-> $$
->
-> ここで， ${}^1T_0$ は`xform_matrix`， ${}^tS_1$ は`scaling_matrix`， $-\boldsymbol{d}$ は`drift_vector`である．
+> オブジェクトを分割するか中間点を追加することでシーンチェンジを明示すること．
 
-#### テーブル
+> [!IMPORTANT]
+> 出力シーンとこのエフェクトが存在するシーンを同じものにすること．(AviUtl2 の仕様上，必ずフレームジャンプが発生するため．)
 
-```lua
-local params = {
-  amt = 1.0, -- shutter_angle / 360.0
-  smp_lim = 256,
-  ext = 2,
-  geo_cache = 0,
-  cache_purge = 0,
-  print_info = false
-}
+#### パラメータ
 
-local context = {
-  name = "SCRIPT_NAME", -- 独自の名前を入力
-  w = obj.w,
-  h = obj.h,
-  cx = obj.getvalue("cx") + obj.cx,
-  cy = obj.getvalue("cy") + obj.cy,
-  id = obj.id,
-  idx = obj.index,
-  num = obj.num,
-  frame = obj.frame,
-  range = obj.totalframe
-}
+- <details>
+  <summary>Shutter</summary>
 
-local xform = {
-  cx = obj.getvalue("cx"),
-  cy = obj.getvalue("cy"),
-  x = obj.getvalue("x"),
-  y = obj.getvalue("y"),
-  rz = obj.getvalue("rz"),
-  sx = obj.getvalue("sx"),
-  sy = obj.getvalue("sy")
-}
+  - Shutter::Angle: ブラーの範囲．360度で1フレーム移動量と等しい．
+  - Shutter::Falloff::Edge: 減衰させる範囲．
+    - Trailing: 移動元の方向に減衰．
+    - Leading: 移動先の方向に減衰．
+    - Symmetric: 両方向に減衰．
+  - Shutter::Falloff::Amount: 減衰の量．
 
-local geo = {
-  cx = obj.cx,
-  cy = obj.cy,
-  ox = obj.ox,
-  oy = obj.oy,
-  rz = obj.rz,
-  sx = obj.sx,
-  sy = obj.sy
-}
+  </details>
 
-local margin = {
-  left = 0,
-  top = 0,
-  right = 0,
-  bottom = 0
-}
-```
+- <details>
+  <summary>Sampling</summary>
 
-##  ビルド方法
+  - Sampling::Viewport::Sample Limit: プレビューでの描画精度．サンプル数の上限値を設定する．
+  - Sampling::Render::Sample Limit: 出力時の描画精度．サンプル数の上限値を設定する．
 
-`.github/workflows`内の`releaser.yml`に記載．
+  </details>
 
-## License
-LICENSEファイルに記載．
+- <details>
+  <summary>Compositing</summary>
 
-## Credits
+  - Compositing::Mix: オリジナル画像とブラーを合成する．
 
-### AviUtl ExEdit2 Plugin SDK
+  </details>
 
-https://spring-fragrance.mints.ne.jp/aviutl/
+- <details>
+  <summary>Depth</summary>
 
----
+  - Depth::Layer: 深度マップとして参照するレイヤーの番号．
 
-The MIT License
+  </details>
 
-Copyright (c) 2025 Kenkun
+- <details>
+  <summary>Additional Options</summary>
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+  - Preset: NVIDIA Optical Flow のプリセット．
+    - Slow: 高品質．
+    - Medium: 標準．
+    - Fast: 高速．
+  - Layer Reference: レイヤーの参照方法．
+    - Absolute: 絶対参照．
+    - Relative: 相対参照．
+  - View: 描画・デバッグ用表示モード．
+    - Processed: ブラー処理結果．
+    - Flow: 推定されたオプティカルフロー．
+    - Nearest Propagated Flow: 最近傍伝播フロー．
+    - Distinct Propagated Flow: 異なるモーションの伝播フロー．
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
+  </details>
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+## ビルド方法
 
-## Change Log
-- **v1.1.1**
-  - UIのグルーピング． (beta22以降必要)
-  - `Cache Purge`が`Auto`のときの条件分岐を修正．
+[リリース用ワークフロー](./.github/workflows/releaser.yml)を参照されたい．
 
-- **v1.1.0**
-  - `.mod2`化．
-  - 縦横比変形に対応．
-  - 外挿計算結果をプロジェクトファイルに埋め込むようにした．
-  - `Cache Control`を`Cache Purge`に変更．(破壊的)
+## ライセンス
 
-- **v1.0.0**
-  - `Object ID`をスクリプト側で入手できるように変更．
-  - `Print Information`で表示される`Required Samples`が1少なかった問題の解決．
+本プログラムのライセンスは [LICENSE](./LICENSE) を参照されたい．
 
-- **v0.2.2**
-  - luaの`require`から呼び出せるように変更．
-  - リサイズ計算の精度向上．
-  - `PI`項目名の間違いを修正．
+また，本プログラムが利用するサードパーティ製ライブラリ等のライセンス情報は [THIRD_PARTY_LICENSES](./THIRD_PARTY_LICENSES.md) に記載している．
 
-- **v0.2.1**
-  - 平均計算ミスの修正．
-  - リサイズ計算で中心座標に対してブラー量を考慮していなかった問題の修正．
-  - Geometryデータの保存クラスに修飾子追加．
+## 更新履歴
 
-- **v0.2.0**
-  - 中心座標をスクリプト側で入手できるように変更．
-  - サンプル数計算をリサイズ量に基づいて計算するように変更．
-  - `Print Information`で表示される必要サンプル数が描画時のサンプル数であった問題を修正．
-  - Geometryデータの保存方法を変更．
+[CHANGELOG](./CHANGELOG.md) を参照されたい．
 
-- **v0.1.0**
-  - Release
+<!-- links -->
+
+[releases-url]: https://github.com/korarei/AviUtl2_ObjectMotionBlur_LK_Script/releases
+[releases-badge]: https://img.shields.io/github/v/release/korarei/AviUtl2_ObjectMotionBlur_LK_Script
+[catalog-url]: https://aviutl2-catalog-badge.sevenc7c.workers.dev/package/korarei.ObjectMotionBlur_LK
+[catalog-badge]: https://aviutl2-catalog-badge.sevenc7c.workers.dev/badge/v/korarei.ObjectMotionBlur_LK

@@ -1,0 +1,56 @@
+[astra]
+requires-astra = ">=0.6.2"
+
+[project]
+name = "MotionBlur_K"
+version = "0.1.0"
+author = "Korarei"
+requires-aviutl2 = "2010700"
+
+[build]
+[[build.plugins]]
+id = "core"
+shell = "pwsh"
+variables = { SOURCE = "./src" }
+
+[build.plugins.release]
+commands = '''
+$dst = "$env:BUILD_DIRECTORY/Release"
+cmake -S "$env:SOURCE" -B "$dst" --preset release -DREQUIRES_AVIUTL2="$env:PROJECT_REQUIRES_AVIUTL2" -DVERSION="$env:PROJECT_VERSION"
+cp "$dst/compile_commands.json" "$env:SOURCE"
+cmake --build "$dst"
+'''
+artifacts = ["${BUILD_DIRECTORY}/Release/*.aux2"]
+
+[build.plugins.debug]
+commands = '''
+$dst = "$env:BUILD_DIRECTORY/Debug"
+cmake -S "$env:SOURCE" -B "$dst" --preset debug -DREQUIRES_AVIUTL2="$env:PROJECT_REQUIRES_AVIUTL2"
+cp "$dst/compile_commands.json" "$env:SOURCE"
+cmake --build "$dst"
+'''
+artifacts = ["${BUILD_DIRECTORY}/Debug/*.aux2"]
+
+[release]
+[release.package]
+information = "${PROJECT_NAME} v${PROJECT_VERSION} by ${PROJECT_AUTHOR}"
+license = "MIT"
+website = "https://github.com/korarei/AviUtl2_ObjectMotionBlur_LK_Script"
+report-issue = "https://github.com/korarei/AviUtl2_ObjectMotionBlur_LK_Script/issues"
+summary = "AviUtl ExEdit2 向けモーションブラーエフェクト"
+description = """
+AviUtl ExEdit2 向け軽量モーションブラエフェクト．
+
+以下の機能が追加される．
+
+- ぼかし\\ObjectMotionBlur_LK: オブジェクトに 2D モーションブラーをかける
+- ぼかし\\SceneMotionBlur_K: オプティカルフローに基づき画面全体にモーションブラーをかける
+"""
+
+[[release.contents.extensions]]
+directory = "Plugin/${PROJECT_NAME}"
+files = ["plugin:core"]
+
+[[release.contents.documents]]
+directory = "Plugin/${PROJECT_NAME}"
+files = ["./*.md", "./LICENSE"]
