@@ -109,16 +109,14 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
   - Tint::Image: グラデーションマップ画像のパス．
   - Tint::Layer: グラデーションマップレイヤーの番号．
 
-  > [!NOTE]
-  > - 横: 輝度
-  > - 縦: ブラー進捗
+  グラデーションマップは横軸が輝度，縦軸がブラー進捗．
 
   </details>
 
 - <details>
   <summary>Compositing</summary>
 
-  - Compositing::Mix: オリジナル画像とブラーを合成する． `50.00` で標準モーションブラーの `残像` に近い挙動になる．
+  - Compositing::Mix: オリジナル画像とブラーを合成する．
   - Compositing::Alpha Mode: 出力のアルファ情報．
     - Alpha Blending: アルファブレンド．
     - Alpha Hashed: アルファハッシュ．
