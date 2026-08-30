@@ -6,6 +6,7 @@
 > v1.x.x との互換性はない．
 
 - `ObjectMotionBlur_LK` をフィルタプラグイン化
+- `SceneMotionBlur_K` を追加
 
 以下は `ObjectMotionBlur_LK` の変更点
 
