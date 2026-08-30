@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #pragma warning(push)
@@ -10,17 +11,20 @@
 #include <filter2.h>
 #pragma warning(pop)
 
-namespace blur::scene {
-struct Image {
-    int w = 0, h = 0;
-    std::vector<PIXEL_RGBA> data;
-};
+#include "render.hpp"
 
+namespace blur::scene {
 static_assert(sizeof(PIXEL_RGBA) == sizeof(uint32_t));
 
 struct Instance {
+    struct Frame {
+        std::optional<int> frame = std::nullopt;
+        std::vector<PIXEL_RGBA> image;
+    };
+
+    renderer::ID id{};
     int section = -1;
-    int frame = 0;
-    Image image{};
+    Frame prev{};
+    Frame curr{};
 };
 }  // namespace blur::scene

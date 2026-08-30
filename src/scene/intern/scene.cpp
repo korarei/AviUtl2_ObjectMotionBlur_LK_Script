@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>  // IWYU pragma: keep
 #include <format>
+#include <utility>
 
 #pragma warning(push)
 #pragma warning(disable : 4201)  // 非標準の無名構造体 (filter2.h FILTER_ITEM_COLOR)
@@ -28,22 +29,35 @@ namespace properties {
 namespace shutter {
 FILTER_ITEM_GROUP name(L"Shutter", true);
 FILTER_ITEM_TRACK angle(L"Shutter::Angle", 180.0, 0.0, 720.0, 0.01);
+namespace falloff {
+FILTER_ITEM_SEPARATOR name(L"Falloff");
+namespace edge {
+FILTER_ITEM_SELECT::ITEM contents[] = {
+    {L"Trailing", 0},
+    {L"Leading", 1},
+    {L"Symmetric", 2},
+    {nullptr, -1},
+};
+FILTER_ITEM_SELECT control(L"Shutter::Falloff::Edge", 2, contents);
+auto& value = control.value;
+}  // namespace edge
+FILTER_ITEM_TRACK amount(L"Shutter::Falloff::Amount", 2.0, 0.0, 100.0, 0.01);
+}  // namespace falloff
 }  // namespace shutter
 namespace sampling {
 FILTER_ITEM_GROUP name(L"Sampling", false);
 namespace viewport {
 FILTER_ITEM_SEPARATOR name(L"Viewport");
-FILTER_ITEM_TRACK sample_limit(L"Sampling::Viewport::Sample Limit", 8.0, 2.0, 128.0, 1.0);
+FILTER_ITEM_TRACK sample_limit(L"Sampling::Viewport::Sample Limit", 128.0, 2.0, 4096.0, 1.0);
 }  // namespace viewport
 namespace render {
 FILTER_ITEM_SEPARATOR name(L"Render");
-FILTER_ITEM_TRACK sample_limit(L"Sampling::Render::Sample Limit", 32.0, 2.0, 128.0, 1.0);
+FILTER_ITEM_TRACK sample_limit(L"Sampling::Render::Sample Limit", 512.0, 2.0, 4096.0, 1.0);
 }  // namespace render
 }  // namespace sampling
 namespace compositing {
 FILTER_ITEM_GROUP name(L"Compositing", false);
 FILTER_ITEM_TRACK mix(L"Compositing::Mix", 100.0, 0.0, 100.0, 0.01);
-FILTER_ITEM_TRACK falloff(L"Compositing::Falloff", 0.0, 0.0, 100.0, 0.01);
 }  // namespace compositing
 namespace depth {
 FILTER_ITEM_GROUP name(L"Depth", false);
@@ -71,13 +85,7 @@ auto& value = control.value;
 }  // namespace layer_reference
 namespace view {
 FILTER_ITEM_SELECT::ITEM contents[] = {
-    {L"Processed", 0},
-    {L"Flow", 1},
-    {L"Cost", 2},
-    {L"Forward-Backward Consistency", 3},
-    {L"Depth", 4},
-    {L"Propagated Flow", 5},
-    {L"Propagated Quality", 6},
+    {L"Processed", 0}, {L"Flow", 1}, {L"Nearest Propagated Flow", 2}, {L"Alternative Propagated Flow", 3},
     {nullptr, -1},
 };
 FILTER_ITEM_SELECT control(L"View", 0, contents);
@@ -125,9 +133,6 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         }
     }
 
-    const bool is_boundary = ctx->object->origin_frame == ctx->object->frame_s || section != instance->section ||
-                             instance->image.w != ctx->object->width || instance->image.h != ctx->object->height;
-
     if (!ctx->copy_image_resource(L"resource:reference", nullptr)) {
         aul::logger::Error(L"Failed to copy image 'object' to image 'resource:reference'");
         return false;
@@ -157,8 +162,27 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         }
     }
 
+    const renderer::ID id{
+        .w = static_cast<uint16_t>(ctx->object->width),
+        .h = static_cast<uint16_t>(ctx->object->height),
+        .preset = props::preset::value,
+    };
+
     float scale = 0.0f;
     bool should_use_temporal_hints = false;
+
+    bool is_boundary = !instance->curr.frame.has_value() || ctx->object->origin_frame == ctx->object->frame_s ||
+                       section != instance->section;
+
+    if (instance->id != id) {
+        renderer::Remove(instance->id);
+        instance->id = id;
+        const size_t size = static_cast<size_t>(instance->id.w) * instance->id.h;
+        instance->prev.image.resize(size);
+        instance->curr.image.resize(size);
+        renderer::Add(id);
+        is_boundary = true;
+    }
 
     if (is_boundary) {
         if (!ctx->copy_image_resource(L"resource:target", nullptr)) {
@@ -166,25 +190,37 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             return false;
         }
 
-        instance->image.w = ctx->object->width, instance->image.h = ctx->object->height;
-        instance->image.data.resize(static_cast<size_t>(instance->image.w) * instance->image.h);
+        ctx->get_image_data(instance->curr.image.data());
+        instance->curr.frame = ctx->object->frame;
+        instance->prev.frame = std::nullopt;
+        instance->section = section;
     } else {
-        ctx->create_image_resource(L"resource:target", instance->image.data.data(), instance->image.w,
-                                   instance->image.h);
+        if (instance->curr.frame != ctx->object->frame) {
+            std::swap(instance->prev, instance->curr);
+            ctx->get_image_data(instance->curr.image.data());
+            instance->curr.frame = ctx->object->frame;
+            instance->section = section;
+        }
 
-        if (const auto df = ctx->object->frame - instance->frame; df != 0) {
-            scale = 1.0f / static_cast<float>(df);
-            should_use_temporal_hints = true;
+        if (instance->prev.frame.has_value()) {
+            const auto df = ctx->object->frame - *instance->prev.frame;
+            if (df == 1) {
+                scale = 1.0f;
+                should_use_temporal_hints = true;
+            } else if (df != 0) {
+                scale = 1.0f / static_cast<float>(df);
+            }
+
+            ctx->create_image_resource(L"resource:target", instance->prev.image.data(), ctx->object->width,
+                                       ctx->object->height);
+        } else {
+            ctx->copy_image_resource(L"resource:target", nullptr);
         }
     }
 
-    ctx->get_image_data(instance->image.data.data());
-    instance->section = section;
-    instance->frame = ctx->object->frame;
-
     auto* const dst = ctx->get_image_texture2d();
 
-    renderer::Source src{
+    renderer::Sequence sequence{
         .inputs =
             {
                 ctx->get_image_resource_texture2d(L"resource:reference"),
@@ -193,7 +229,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         .depth = ctx->get_image_resource_texture2d(L"resource:depth"),
     };
 
-    if (dst == nullptr || src.inputs[0uz] == nullptr || src.inputs[1uz] == nullptr || src.depth == nullptr) {
+    if (dst == nullptr || sequence.inputs[0uz] == nullptr || sequence.inputs[1uz] == nullptr ||
+        sequence.depth == nullptr) {
         aul::logger::Error(L"Failed to get 'ID3D11Texture2D' pointers");
         return false;
     }
@@ -204,33 +241,22 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                                      ? static_cast<int32_t>(props::sampling::render::sample_limit.value)
                                      : static_cast<int32_t>(props::sampling::viewport::sample_limit.value);
 
-    const renderer::Param param{
-        .id =
-            {
-                .w = static_cast<uint16_t>(ctx->object->width),
-                .h = static_cast<uint16_t>(ctx->object->height),
-                .preset = props::preset::value,
-            },
+    const renderer::Parameter param{
+        .id = id,
         .should_use_temporal_hints = should_use_temporal_hints,
-        .scale = scale,
-        .amount = amount,
-        .phase = 0.0f,
+        .scale = scale * amount,
+        .falloff_edge = props::shutter::falloff::edge::value,
+        .falloff_amount = std::clamp(static_cast<float>(props::shutter::falloff::amount.value) * 0.01f, 0.0f, 1.0f),
         .sample_limit = sample_limit,
         .mix = std::clamp(static_cast<float>(props::compositing::mix.value) * 0.01f, 0.0f, 1.0f),
-        .falloff = std::max(static_cast<float>(props::compositing::falloff.value) * 0.01f, 0.0f),
         .view_mode = props::view::value,
     };
 
-    const auto ec = renderer::Render(
-        dst, [&src, &param](const renderer::Context& ctx) -> std::error_code { return ctx.Draw(src, param); });
+    const auto ec =
+        renderer::Render(dst, [&sequence, &param](const renderer::Context& ctx) { return ctx.Draw(sequence, param); });
 
     if (ec != std::error_code{}) {
-        if (const auto msg = string::ToWString(string::AsUTF8(ec.message())); msg.has_value()) {
-            aul::logger::Error(*msg);
-        } else {
-            aul::logger::Error(L"Unknown error occurred");
-        }
-
+        aul::logger::Error(ec.message());
         return false;
     }
 
@@ -239,11 +265,18 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 
 void* Init([[maybe_unused]] int64_t id) { return new Instance{}; }
 
-void Deinit([[maybe_unused]] int64_t id, void* instance) { delete static_cast<Instance*>(instance); }
+void Deinit([[maybe_unused]] int64_t id, void* userdata) {
+    auto* const instance = static_cast<Instance*>(userdata);
+    renderer::Remove(instance->id);
+    delete instance;
+}
 
 constinit void* props[] = {
     &properties::shutter::name,
     &properties::shutter::angle,
+    &properties::shutter::falloff::name,
+    &properties::shutter::falloff::edge::control,
+    &properties::shutter::falloff::amount,
     &properties::sampling::name,
     &properties::sampling::viewport::name,
     &properties::sampling::viewport::sample_limit,
@@ -251,7 +284,6 @@ constinit void* props[] = {
     &properties::sampling::render::sample_limit,
     &properties::compositing::name,
     &properties::compositing::mix,
-    &properties::compositing::falloff,
     &properties::depth::name,
     &properties::depth::layer,
     &properties::additional_options,
@@ -281,5 +313,5 @@ void Register(HOST_APP_TABLE* host) {
     host->register_clear_cache_handler([]([[maybe_unused]] EDIT_SECTION* edit) { renderer::Reset(); });
 }
 
-void Unregister() { renderer::Reset(); }
+void Unregister() { renderer::Deinit(); }
 }  // namespace blur::scene

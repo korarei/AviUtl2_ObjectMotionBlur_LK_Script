@@ -3,26 +3,15 @@
 #include <d3d11.h>
 
 #include <array>
+#include <concepts>
 #include <cstdint>
+#include <memory>
 #include <system_error>
+#include <type_traits>
 
 namespace blur::scene::renderer {
 enum class Error : uint8_t {
-    kDeviceRemoved = 1u,
-    kDeviceReset,
-    kDeviceHung,
-    kMapBufferFailed,
-    kCreateBufferFailed,
-    kCreateTexture2DFailed,
-    kCreateRenderTargetViewFailed,
-    kCreateShaderResourceViewFailed,
-    kCreateUnorderedAccessViewFailed,
-    kCreateVertexShaderFailed,
-    kCreatePixelShaderFailed,
-    kCreateComputeShaderFailed,
-    kCreateDepthStencilStateFailed,
-    kCreateSamplerStateFailed,
-    kOpticalFlowUnavailable,
+    kOpticalFlowUnavailable = 1u,
     kInvalidOpticalFlowCall,
     kFlowAlreadyConsumed,
     kIncompatibleOpticalFlowVersion,
@@ -36,7 +25,7 @@ enum class Error : uint8_t {
 
 std::error_code make_error_code(Error error) noexcept;
 
-struct Source {
+struct Sequence {
     std::array<ID3D11Texture2D*, 2uz> inputs{};
     ID3D11Texture2D* depth = nullptr;
 };
@@ -44,19 +33,24 @@ struct Source {
 struct ID {
     uint16_t w = 0u, h = 0u;
     int32_t preset = 0;
+
+    constexpr bool operator==(const ID&) const noexcept = default;
+    constexpr bool operator!=(const ID& other) const noexcept { return !(*this == other); }
 };
 
 static_assert(sizeof(ID) == sizeof(uint64_t));
 
-struct Param {
+void Add(const ID& id);
+void Remove(const ID& id);
+
+struct Parameter {
     ID id{};
     bool should_use_temporal_hints = false;
     float scale = 1.0f;
-    float amount = 1.0f;
-    float phase = 0.0f;
+    int32_t falloff_edge = 0;
+    float falloff_amount = 0.0f;
     int32_t sample_limit = 1;
     float mix = 1.0f;
-    float falloff = 0.0f;
     int32_t view_mode = 0;
 };
 
@@ -69,7 +63,7 @@ class Context {
 
     ~Context() = default;
 
-    [[nodiscard]] std::error_code Draw(const Source& src, const Param& param) const;
+    [[nodiscard]] std::error_code Draw(const Sequence& sequence, const Parameter& param) const;
 
   private:
     friend Context CreateContext(ID3D11Texture2D* dst);
@@ -100,6 +94,7 @@ class FunctionRef {
 [[nodiscard]] std::error_code Render(ID3D11Texture2D* dst, FunctionRef callback);
 
 void Reset();
+void Deinit();
 }  // namespace blur::scene::renderer
 
 template <>

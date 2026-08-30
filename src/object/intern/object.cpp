@@ -158,7 +158,7 @@ static_assert(sizeof(Unit) == 64uz);
     for (size_t i = 0uz; i < rig.links.size(); ++i) {
         const auto& rotation = rig.links[i].rotation;
 
-        const float origin = rotation.origin;
+        const float origin = rotation.origin + (rotation.extent * step * 0.5f);
         const float extent = rotation.extent * step;
 
         rotations[i] = {
@@ -854,12 +854,12 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
 void CreateTrajectory(const Object& object, int samples, std::vector<renderer::Float2x3>& trajectory) {
     const auto& rig = object.rig;
 
-    const float step = 1.0f / static_cast<float>(samples - 1);
+    const float step = 1.0f / static_cast<float>(samples);
     auto rotations = BuildRotations(object, step);
     trajectory.resize(samples);
 
     for (int i = 0; i < samples; ++i) {
-        const float t = step * static_cast<float>(i);
+        const float t = (static_cast<float>(i) + 0.5f) * step;
         Eigen::Affine2f node = Eigen::Affine2f::Identity();
 
         for (size_t j = 0uz; j < rig.links.size(); ++j) {
@@ -963,7 +963,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 
         const float mix = std::clamp(static_cast<float>(props::compositing::mix.value) * 0.01f, 0.0f, 1.0f) * 2.0f;
         const float falloff = std::max(static_cast<float>(props::compositing::falloff.value) * 0.01f, 0.0f);
-        const float decay = std::pow(std::max(1.0f - falloff, kEpsilon), 1.0f / static_cast<float>(samples - 1));
+        const float decay = std::pow(std::max(1.0f - falloff, kEpsilon), 1.0f / static_cast<float>(samples));
 
         const renderer::Target target{
             .image = img,

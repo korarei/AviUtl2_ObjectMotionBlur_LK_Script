@@ -20,13 +20,15 @@ inline float4 Sample(float2 pos) {
 
 float4 main(float4 pos : SV_Position) : SV_Target {
     pos.xyz = float3(pos.xy + origin, 1.0);
+
+    const float4 dry = Sample(pos.xy) * mix.x;
+
     pos.xy = float2(dot(transform[0], pos.xyz), dot(transform[1], pos.xyz));
 
     Float2x3 node = trajectory[0];
     float weight = 1.0;
     float norm = weight;
     float4 wet = Sample(float2(dot(node[0], pos.xyz), dot(node[1], pos.xyz)));
-    const float4 dry = wet * mix.x;
 
     for (int i = 1; i < samples; ++i) {
         node = trajectory[i];
