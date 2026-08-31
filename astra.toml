@@ -51,6 +51,10 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 directory = "Plugin/${PROJECT_NAME}"
 files = ["plugin:core"]
 
+[[release.contents.extensions]]
+directory = "Language/"
+files = ["./i18n/*.aul2"]
+
 [[release.contents.documents]]
 directory = "Plugin/${PROJECT_NAME}"
 files = ["./*.md", "./LICENSE"]

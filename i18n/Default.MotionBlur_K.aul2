@@ -1,0 +1,33 @@
+[Language]
+Information=MotionBlur_K (Default) by Korarei
+
+[Tips.ObjectMotionBlur_LK]
+effect.name=オブジェクトの移動・変形軌跡に基づいて 2D モーションブラーを付加する
+Shutter::Angle=ブラーの範囲\n360 度で 1 フレーム分の移動量と等しい
+Shutter::Phase=ブラーの中心位置\nShutter::Angle × -0.5 で中央となる
+Shutter::Falloff::Edge=減衰させる位置\n- Trailing: 移動元側を減衰\n- Leading: 移動先側を減衰\n- Symmetric: 両端を均等に減衰
+Shutter::Falloff::Amount=減衰の割合
+Sampling::Viewport::Sample Limit=プレビュー時の描画精度\nサンプル数の上限値を設定する
+Sampling::Render::Sample Limit=出力時の描画精度\nサンプル数の上限値を設定する
+Tint::Source=グラデーションマップの参照元\n- Image: 画像ファイル\n- Layer: レイヤー\n\nマップ仕様\n- 横軸: 輝度\n- 縦軸: ブラー進捗
+Tint::Image=グラデーションマップ画像のファイルパス
+Tint::Layer=グラデーションマップとして参照するレイヤー番号
+Compositing::Mix=オリジナル画像とブラー画像の合成比率
+Compositing::Alpha Mode=出力のアルファ処理モード\n- Alpha Blending: アルファブレンド\n- Alpha Hashed: アルファハッシュ
+Extrapolation=0 フレームより前の動きを仮想的に外挿計算する方法\n- None: 計算しない\n- Linear: 1 次補間\n- Quadratic: 2 次補間
+Layer Reference=レイヤー番号の指定方法\n- Absolute: 絶対指定\n- Relative: 現在のレイヤーからの相対指定
+Resize=ブラーが見切れないように描画領域を自動拡張する
+Diagnostics=ログコンソールに診断情報を出力する
+
+[Tips.SceneMotionBlur_K]
+effect.name=オプティカルフロー（ピクセル単位の動きベクトル）を推定し、画面全体にモーションブラーを付加する
+Shutter::Angle=ブラーの範囲\n360 度で 1 フレーム分の移動量と等しい
+Shutter::Falloff::Edge=減衰させる位置\n- Trailing: 移動元側を減衰\n- Leading: 移動先側を減衰\n- Symmetric: 両端を均等に減衰
+Shutter::Falloff::Amount=減衰の割合
+Sampling::Viewport::Sample Limit=プレビュー時の描画精度\nサンプル数の上限値を設定する
+Sampling::Render::Sample Limit=出力時の描画精度\nサンプル数の上限値を設定する
+Compositing::Mix=オリジナル画像とブラー画像の合成比率
+Depth::Layer=深度マップとして参照するレイヤー番号
+Preset=NVIDIA Optical Flow の動作プリセット\n- Slow: 高品質\n- Medium: 標準\n- Fast: 高速
+Layer Reference=レイヤー番号の指定方法\n- Absolute: 絶対指定\n- Relative: 現在のレイヤーからの相対指定
+View=描画・デバッグ用表示モード\n- Processed: 通常のブラー処理結果\n- Flow: 推定されたオプティカルフロー\n- Nearest Propagated Flow: 最近傍伝播フロー\n- Distinct Propagated Flow: 異動伝播フロー

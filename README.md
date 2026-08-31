@@ -108,7 +108,7 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 <details>
 <summary><b>Tint</b></summary>
 
-- Tint::Source: チントで使用するグラデーションマップの参照元．
+- Tint::Source: グラデーションマップの参照元．
   - Image: 画像ファイル．
   - Layer: レイヤー．
 - Tint::Image: グラデーションマップ画像のパス．
