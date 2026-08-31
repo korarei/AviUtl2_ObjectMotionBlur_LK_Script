@@ -24,7 +24,7 @@ jobs:
     env:
       USERNAME: korarei
       FEED_URL: https://nuget.pkg.github.com/korarei/index.json
-      VCPKG_BINARY_SOURCES: clear;nuget,https://nuget.pkg.github.com/korarei/index.json,readwrite
+      VCPKG_BINARY_SOURCES: clear;nuget,GitHubPackages,readwrite
 
     steps:
     - name: Checkout repository
