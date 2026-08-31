@@ -19,11 +19,11 @@ static_assert(sizeof(PIXEL_RGBA) == sizeof(uint32_t));
 struct Instance {
     struct Frame {
         std::optional<int> frame = std::nullopt;
+        int section = -1;
         std::vector<PIXEL_RGBA> image;
     };
 
     renderer::ID id{};
-    int section = -1;
     Frame prev{};
     Frame curr{};
 };

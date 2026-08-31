@@ -170,50 +170,45 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
     float scale = 0.0f;
     bool should_use_temporal_hints = false;
 
-    bool is_boundary = !instance->curr.frame.has_value() || ctx->object->origin_frame == ctx->object->frame_s ||
-                       section != instance->section;
-
     if (instance->id != id) {
         renderer::Remove(instance->id);
         instance->id = id;
         const size_t size = static_cast<size_t>(instance->id.w) * instance->id.h;
         instance->prev.image.resize(size);
         instance->curr.image.resize(size);
+        instance->prev.frame = std::nullopt;
+        instance->curr.frame = std::nullopt;
         renderer::Add(id);
-        is_boundary = true;
     }
 
-    if (is_boundary) {
+    if (instance->curr.frame.has_value() && *instance->curr.frame != ctx->object->frame) {
+        std::swap(instance->prev, instance->curr);
+    }
+
+    ctx->get_image_data(instance->curr.image.data());
+    instance->curr.frame = ctx->object->frame;
+    instance->curr.section = section;
+
+    if (ctx->object->origin_frame == ctx->object->frame_s ||
+        (instance->prev.frame.has_value() && instance->prev.section != instance->curr.section)) {
+        instance->prev.frame = std::nullopt;
+    }
+
+    if (instance->prev.frame.has_value()) {
+        const auto df = ctx->object->frame - *instance->prev.frame;
+        if (df == 1) {
+            scale = 1.0f;
+            should_use_temporal_hints = true;
+        } else if (df != 0) {
+            scale = 1.0f / static_cast<float>(df);
+        }
+
+        ctx->create_image_resource(L"resource:target", instance->prev.image.data(), ctx->object->width,
+                                   ctx->object->height);
+    } else {
         if (!ctx->copy_image_resource(L"resource:target", nullptr)) {
             aul::logger::Error(L"Failed to copy image 'object' to image 'resource:target'");
             return false;
-        }
-
-        ctx->get_image_data(instance->curr.image.data());
-        instance->curr.frame = ctx->object->frame;
-        instance->prev.frame = std::nullopt;
-        instance->section = section;
-    } else {
-        if (instance->curr.frame != ctx->object->frame) {
-            std::swap(instance->prev, instance->curr);
-            ctx->get_image_data(instance->curr.image.data());
-            instance->curr.frame = ctx->object->frame;
-            instance->section = section;
-        }
-
-        if (instance->prev.frame.has_value()) {
-            const auto df = ctx->object->frame - *instance->prev.frame;
-            if (df == 1) {
-                scale = 1.0f;
-                should_use_temporal_hints = true;
-            } else if (df != 0) {
-                scale = 1.0f / static_cast<float>(df);
-            }
-
-            ctx->create_image_resource(L"resource:target", instance->prev.image.data(), ctx->object->width,
-                                       ctx->object->height);
-        } else {
-            ctx->copy_image_resource(L"resource:target", nullptr);
         }
     }
 

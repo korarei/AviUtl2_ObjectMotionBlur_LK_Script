@@ -15,10 +15,10 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 
 ## 動作確認
 
-- [AviUtl ExEdit2 v2.1.7](https://spring-fragrance.mints.ne.jp/aviutl/)
+- [AviUtl ExEdit2 v2.1.7a](https://spring-fragrance.mints.ne.jp/aviutl/)
 
 > [!CAUTION]
-> - v2.1.7 以降必須．
+> - v2.1.7a 以降必須．
 > - `SceneMotionBlur_K` の利用には Turing 世代以降の NVIDIA GPU (GeForce RTX シリーズ / GTX 166x シリーズ等) が必要．
 
 ## 導入・更新・削除
@@ -84,61 +84,68 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 
 #### パラメータ
 
-- <details>
-  <summary>Shutter</summary>
+<details>
+<summary><b>Shutter</b></summary>
 
-  - Shutter::Angle: ブラーの範囲．360度で1フレーム移動量と等しい．
-  - Shutter::Phase: ブラーの位置． `Shutter::Angle` * -0.5 で中央．
-  - Shutter::Falloff::Edge: 減衰させる範囲．
-  - Shutter::Falloff::Amount: 減衰の量．
+- Shutter::Angle: ブラーの範囲．360度で1フレーム移動量と等しい．
+- Shutter::Phase: ブラーの位置． `Shutter::Angle` * -0.5 で中央．
+- Shutter::Falloff::Edge: 減衰させる位置．
+  - Trailing: 移動元側を減衰．
+  - Leading: 移動先側を減衰．
+  - Symmetric: 両端を均等に減衰．
+- Shutter::Falloff::Amount: 減衰の割合．
 
-  </details>
+</details>
 
-- <details>
-  <summary>Sampling</summary>
+<details>
+<summary><b>Sampling</b></summary>
 
-  - Sampling::Viewport::Sample Limit: プレビューでの描画精度．サンプル数の上限値を設定する．
-  - Sampling::Render::Sample Limit: 出力時の描画精度．サンプル数の上限値を設定する．
+- Sampling::Viewport::Sample Limit: プレビューでの描画精度．サンプル数の上限値を設定する．
+- Sampling::Render::Sample Limit: 出力時の描画精度．サンプル数の上限値を設定する．
 
-  </details>
+</details>
 
-- <details>
-  <summary>Tint</summary>
+<details>
+<summary><b>Tint</b></summary>
 
-  - Tint::Source: チントで使用するグラデーションマップの参照元．
-    - Image: 画像ファイル．
-    - Layer: レイヤー．
-  - Tint::Image: グラデーションマップ画像のパス．
-  - Tint::Layer: グラデーションマップレイヤーの番号．
+- Tint::Source: グラデーションマップの参照元．
+  - Image: 画像ファイル．
+  - Layer: レイヤー．
+- Tint::Image: グラデーションマップ画像のパス．
+- Tint::Layer: グラデーションマップレイヤーの番号．
 
-  グラデーションマップは横軸が輝度，縦軸がブラー進捗．
+> **Note**
+>
+> グラデーションマップの仕様:
+> - 横軸: 輝度
+> - 縦軸: ブラー進捗
 
-  </details>
+</details>
 
-- <details>
-  <summary>Compositing</summary>
+<details>
+<summary><b>Compositing</b></summary>
 
-  - Compositing::Mix: オリジナル画像とブラーを合成する．
-  - Compositing::Alpha Mode: 出力のアルファ情報．
-    - Alpha Blending: アルファブレンド．
-    - Alpha Hashed: アルファハッシュ．
+- Compositing::Mix: オリジナル画像とブラーを合成する．
+- Compositing::Alpha Mode: 出力のアルファ情報．
+  - Alpha Blending: アルファブレンド．
+  - Alpha Hashed: アルファハッシュ．
 
-  </details>
+</details>
 
-- <details>
-  <summary>Additional Options</summary>
+<details>
+<summary><b>Additional Options</b></summary>
 
-  - Extrapolation: 0 フレームより前を仮想的に計算する．
-    - None (計算しない)
-    - Linear (1次補間)
-    - Quadratic (2次補間)
-  - Layer Reference: レイヤーの参照方法．
-    - Absolute: 絶対参照．
-    - Relative: 相対参照．
-  - Resize: ブラーが見切れないように画像サイズを変更する．
-  - Diagnostics: コンソールに情報を表示する．
+- Extrapolation: 0 フレームより前を仮想的に計算する．
+  - None (計算しない)
+  - Linear (1次補間)
+  - Quadratic (2次補間)
+- Layer Reference: レイヤーの参照方法．
+  - Absolute: 絶対参照．
+  - Relative: 相対参照．
+- Resize: ブラーが見切れないように画像サイズを変更する．
+- Diagnostics: コンソールに情報を表示する．
 
-  </details>
+</details>
 
 ### SceneMotionBlur_K
 
@@ -154,57 +161,57 @@ AviUtl ExEdit2 向け軽量モーションブラエフェクト．
 
 #### パラメータ
 
-- <details>
-  <summary>Shutter</summary>
+<details>
+<summary><b>Shutter</b></summary>
 
-  - Shutter::Angle: ブラーの範囲．360度で1フレーム移動量と等しい．
-  - Shutter::Falloff::Edge: 減衰させる範囲．
-    - Trailing: 移動元の方向に減衰．
-    - Leading: 移動先の方向に減衰．
-    - Symmetric: 両方向に減衰．
-  - Shutter::Falloff::Amount: 減衰の量．
+- Shutter::Angle: ブラーの範囲．360度で1フレーム移動量と等しい．
+- Shutter::Falloff::Edge: 減衰させる位置．
+  - Trailing: 移動元側を減衰．
+  - Leading: 移動先側を減衰．
+  - Symmetric: 両端を均等に減衰．
+- Shutter::Falloff::Amount: 減衰の割合．
 
-  </details>
+</details>
 
-- <details>
-  <summary>Sampling</summary>
+<details>
+<summary><b>Sampling</b></summary>
 
-  - Sampling::Viewport::Sample Limit: プレビューでの描画精度．サンプル数の上限値を設定する．
-  - Sampling::Render::Sample Limit: 出力時の描画精度．サンプル数の上限値を設定する．
+- Sampling::Viewport::Sample Limit: プレビューでの描画精度．サンプル数の上限値を設定する．
+- Sampling::Render::Sample Limit: 出力時の描画精度．サンプル数の上限値を設定する．
 
-  </details>
+</details>
 
-- <details>
-  <summary>Compositing</summary>
+<details>
+<summary><b>Compositing</b></summary>
 
-  - Compositing::Mix: オリジナル画像とブラーを合成する．
+- Compositing::Mix: オリジナル画像とブラーを合成する．
 
-  </details>
+</details>
 
-- <details>
-  <summary>Depth</summary>
+<details>
+<summary><b>Depth</b></summary>
 
-  - Depth::Layer: 深度マップとして参照するレイヤーの番号．
+- Depth::Layer: 深度マップとして参照するレイヤーの番号．
 
-  </details>
+</details>
 
-- <details>
-  <summary>Additional Options</summary>
+<details>
+<summary><b>Additional Options</b></summary>
 
-  - Preset: NVIDIA Optical Flow のプリセット．
-    - Slow: 高品質．
-    - Medium: 標準．
-    - Fast: 高速．
-  - Layer Reference: レイヤーの参照方法．
-    - Absolute: 絶対参照．
-    - Relative: 相対参照．
-  - View: 描画・デバッグ用表示モード．
-    - Processed: ブラー処理結果．
-    - Flow: 推定されたオプティカルフロー．
-    - Nearest Propagated Flow: 最近傍伝播フロー．
-    - Distinct Propagated Flow: 異なるモーションの伝播フロー．
+- Preset: NVIDIA Optical Flow のプリセット．
+  - Slow: 高品質．
+  - Medium: 標準．
+  - Fast: 高速．
+- Layer Reference: レイヤーの参照方法．
+  - Absolute: 絶対参照．
+  - Relative: 相対参照．
+- View: 描画・デバッグ用表示モード．
+  - Processed: ブラー処理結果．
+  - Flow: 推定されたオプティカルフロー．
+  - Nearest Propagated Flow: 最近傍伝播フロー．
+  - Distinct Propagated Flow: 異なるモーションの伝播フロー．
 
-  </details>
+</details>
 
 ## ビルド方法
 
