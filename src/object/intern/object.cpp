@@ -969,22 +969,14 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         return false;
     }
 
-    const auto metrics = ComputeMotionMetrics(*object, 64);
-    const int required_samples = static_cast<int>(std::min(std::ceil(metrics.length) + 1.0f, 65536.0f));
+    const auto limit = aul::context::GetEditorState() == aul::context::EditorState::kExporting
+                           ? static_cast<int>(props::sampling::render::sample_limit.value)
+                           : static_cast<int>(props::sampling::viewport::sample_limit.value);
 
-    if (required_samples < 2) {
-        return true;
-    }
+    const auto metrics = ComputeMotionMetrics(*object, std::max(limit / 8, 2));
+    const int required_samples = static_cast<int>(std::clamp(std::ceil(metrics.length) + 1.0f, 2.0f, 65536.0f));
 
-    const int32_t limit = aul::context::GetEditorState() == aul::context::EditorState::kExporting
-                              ? static_cast<int32_t>(props::sampling::render::sample_limit.value)
-                              : static_cast<int32_t>(props::sampling::viewport::sample_limit.value);
-
-    const int32_t samples = std::min(limit, required_samples);
-
-    if (samples < 2) {
-        return true;
-    }
+    const int32_t samples = std::clamp(limit, 2, required_samples);
 
     {
         Eigen::Vector2f origin;

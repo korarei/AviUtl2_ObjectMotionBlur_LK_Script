@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.0.1
+
+- `ObjectMotionBlur_LK` へ UI 非表示ルールを追加
+- `ObjectMotionBlur_LK` の計算結果で得るサンプル数下限を 2 に変更
+- `SceneMotionBlur_K` のフレームキャッシュ更新処理を修正
+
 ## v2.0.0
 
 > [!CAUTION]
