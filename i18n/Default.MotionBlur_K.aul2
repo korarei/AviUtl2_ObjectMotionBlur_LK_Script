@@ -20,7 +20,7 @@ Resize=ブラーが見切れないように描画領域を自動拡張する
 Diagnostics=ログコンソールに診断情報を出力する
 
 [Tips.SceneMotionBlur_K]
-effect.name=オプティカルフロー（ピクセル単位の動きベクトル）を推定し、画面全体にモーションブラーを付加する
+effect.name=オプティカルフロー (ピクセル単位の動きベクトル) を推定し、画面全体にモーションブラーを付加する
 Shutter::Angle=ブラーの範囲\n360 度で 1 フレーム分の移動量と等しい
 Shutter::Falloff::Edge=減衰させる位置\n- Trailing: 移動元側を減衰\n- Leading: 移動先側を減衰\n- Symmetric: 両端を均等に減衰
 Shutter::Falloff::Amount=減衰の割合
