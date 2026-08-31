@@ -121,9 +121,14 @@ FILTER_ITEM_FILE image(
     L"Tint::Image", L"",
     L"Image Files (*.bmp;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.webp)\0*.bmp;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.webp\0\0");
 FILTER_ITEM_TRACK layer(L"Tint::Layer", 0, -100, 100, 1, L"---");
-// v2.1.7 例外出る
-// FILTER_ITEM_HIDE_RULE hide_image(L"Tint::Image", L"Tint::Source", FILTER_ITEM_HIDE_RULE::OPERATOR::EQUAL, 1);
-// FILTER_ITEM_HIDE_RULE hide_layer(L"Tint::Layer", L"Tint::Source", FILTER_ITEM_HIDE_RULE::OPERATOR::EQUAL, 0);
+namespace visibility {
+namespace image_selected {
+FILTER_ITEM_HIDE_RULE image(L"Tint::Image", L"Tint::Source", FILTER_ITEM_HIDE_RULE::OPERATOR::NOT_EQUAL, 0);
+}  // namespace image_selected
+namespace layer_selected {
+FILTER_ITEM_HIDE_RULE layer(L"Tint::Layer", L"Tint::Source", FILTER_ITEM_HIDE_RULE::OPERATOR::NOT_EQUAL, 1);
+}  // namespace layer_selected
+}  // namespace visibility
 }  // namespace tint
 namespace compositing {
 FILTER_ITEM_GROUP name(L"Compositing", false);
@@ -1142,9 +1147,9 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 
 void* Init([[maybe_unused]] int64_t id) { return new Instance{}; }
 
-void Deinit([[maybe_unused]] int64_t id, void* instance) { delete static_cast<Instance*>(instance); }
+void Deinit([[maybe_unused]] int64_t id, void* userdata) { delete static_cast<Instance*>(userdata); }
 
-inline constinit auto props = []<std::size_t... Is>(std::index_sequence<Is...>) {
+inline constinit auto props = []<size_t... Is>(std::index_sequence<Is...>) {
     return std::to_array<void*>({
         &properties::shutter::name,
         &properties::shutter::angle,
@@ -1161,8 +1166,8 @@ inline constinit auto props = []<std::size_t... Is>(std::index_sequence<Is...>) 
         &properties::tint::source::control,
         &properties::tint::image,
         &properties::tint::layer,
-        // &properties::tint::hide_image,
-        // &properties::tint::hide_layer,
+        &properties::tint::visibility::image_selected::image,
+        &properties::tint::visibility::layer_selected::layer,
         &properties::compositing::name,
         &properties::compositing::mix,
         &properties::compositing::alpha_mode::control,
