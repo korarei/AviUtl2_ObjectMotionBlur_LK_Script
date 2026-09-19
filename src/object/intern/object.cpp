@@ -7,7 +7,10 @@
 #include <format>
 #include <limits>
 #include <numbers>
+#include <span>
+#include <stdexcept>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include <Eigen/Geometry>
@@ -37,31 +40,58 @@ using Transform = blur::object::Transform;
 
 constexpr float kEpsilon = Eigen::NumTraits<float>::dummy_precision();
 
+template <size_t N, typename T = Transform>
+class Table {
+  public:
+    explicit Table() = default;
+    explicit Table(size_t size) : data_(size * N) {}
+
+    void Reserve(size_t size) { data_.reserve(size * N); }
+
+    void Push(std::span<const T, N> data) { data_.append_range(data); }
+
+    [[nodiscard]] size_t GetSize() const noexcept { return data_.size() / N; }
+
+    [[nodiscard]] std::span<T, N> operator[](size_t row) noexcept { return std::span<T, N>(&data_[row * N], N); }
+
+    [[nodiscard]] std::span<const T, N> operator[](size_t row) const noexcept {
+        return std::span<const T, N>(&data_[row * N], N);
+    }
+
+    [[nodiscard]] T& operator[](size_t row, size_t col) noexcept { return data_[col + (row * N)]; }
+
+    [[nodiscard]] const T& operator[](size_t row, size_t col) const noexcept { return data_[col + (row * N)]; }
+
+  private:
+    std::vector<T> data_;
+};
+
+template <typename T>
+struct Segment {
+    T origin;
+    T extent;
+};
+
+struct Rotor {
+    float cos;
+    float sin;
+};
+
 struct Object {
-    struct Snapshot {
-        Eigen::Vector2f pivot = Eigen::Vector2f::Zero();
-        std::vector<Transform> transforms;
-    };
-
-    template <typename T>
-    struct Range {
-        T origin;
-        T extent;
-    };
-
-    struct Rotation {
-        float cos;
-        float sin;
+    template <size_t N>
+    struct Trace {
+        std::array<Eigen::Vector2f, N> pivots{};
+        Table<N, Transform> transforms{};
     };
 
     struct Rig {
         struct Link {
-            Range<Eigen::Vector2f> position;
-            Range<Eigen::Vector2f> compensation;
-            Range<float> rotation;
+            Segment<Eigen::Vector2f> position;
+            Segment<Eigen::Vector2f> compensation;
+            Segment<float> rotation;
         };
 
-        Range<Eigen::Vector2f> pivot;
+        Segment<Eigen::Vector2f> pivot;
         std::vector<Link> links;
     };
 
@@ -206,10 +236,10 @@ static_assert(sizeof(Unit) == 64uz);
     return a + (b - a) * t;
 }
 
-[[nodiscard]] std::vector<Object::Range<Object::Rotation>> BuildRotations(const Object& object, float step) {
+[[nodiscard]] std::vector<Segment<Rotor>> BuildRotors(const Object& object, float step) {
     const auto& rig = object.rig;
 
-    std::vector<Object::Range<Object::Rotation>> rotations(rig.links.size());
+    std::vector<Segment<Rotor>> rotors(rig.links.size());
 
     for (size_t i = 0uz; i < rig.links.size(); ++i) {
         const auto& rotation = rig.links[i].rotation;
@@ -217,7 +247,7 @@ static_assert(sizeof(Unit) == 64uz);
         const float origin = rotation.origin + (rotation.extent * step * 0.5f);
         const float extent = rotation.extent * step;
 
-        rotations[i] = {
+        rotors[i] = {
             .origin =
                 {
                     .cos = std::cos(origin),
@@ -231,107 +261,145 @@ static_assert(sizeof(Unit) == 64uz);
         };
     }
 
-    return rotations;
+    return rotors;
 }
 
-[[nodiscard]] std::optional<std::vector<EFFECT_HANDLE>> GetEmptyHandles(int frame, const FILTER_PROC_VIDEO* ctx) {
-    std::vector<EFFECT_HANDLE> handles{};
-    handles.reserve(ctx->object->layer);
+template <size_t N>
+[[nodiscard]] Table<N, EFFECT_HANDLE> GetEmptyHandles(const std::array<int, N>& frames, const FILTER_PROC_VIDEO* ctx) {
+    Table<N, EFFECT_HANDLE> handles{};
+
+    if (ctx->object->layer <= 0) {
+        return handles;
+    }
+
+    handles.Reserve(ctx->object->layer);
 
     {
-        int layer = ctx->object->layer - 1;
+        std::array<int, N> targets;
+        targets.fill(ctx->object->layer - 1);
+        std::array<int, N> cursors = targets;
 
-        for (int i = layer; i >= 0; --i) {
-            if (!ctx->edit->get_layer_enable(i)) {
-                continue;
-            }
+        while (true) {
+            std::array<EFFECT_HANDLE, N> row{};
 
-            auto* const object_handle = ctx->edit->find_object(i, frame);
+            for (size_t i = 0uz; i < N; ++i) {
+                const auto frame = frames[i];
+                auto& target = targets[i];
+                auto& cursor = cursors[i];
 
-            if (object_handle == nullptr || ctx->edit->get_object_layer_frame(object_handle).start > frame) {
-                continue;
-            }
+                for (; cursor >= 0; --cursor) {
+                    if (!ctx->edit->get_layer_enable(cursor)) {
+                        continue;
+                    }
 
-            auto* const candidate = ctx->edit->find_effect(object_handle, L"グループ制御");
+                    auto* const object_handle = ctx->edit->find_object(cursor, frame);
 
-            if (candidate == nullptr || !ctx->edit->get_effect_enable(candidate)) {
-                continue;
-            }
+                    if (object_handle == nullptr || ctx->edit->get_object_layer_frame(object_handle).start > frame) {
+                        continue;
+                    }
 
-            {
-                const auto* const alias = ctx->edit->get_object_alias(object_handle);
+                    auto* const candidate = ctx->edit->find_effect(object_handle, L"グループ制御");
 
-                if (alias == nullptr) {
-                    aul::logger::Error(std::format(L"Failed to get object alias at layer {}, frame {}", i + 1, frame));
-                    return std::nullopt;
-                }
+                    if (candidate == nullptr || !ctx->edit->get_effect_enable(candidate)) {
+                        continue;
+                    }
 
-                const std::u8string_view object{string::AsUTF8(alias)};
+                    const auto* const alias = ctx->edit->get_effect_item_value(candidate, L"対象レイヤー数");
 
-                const auto meta_st = object.find(u8"[Object]");
-                const auto empty_st = object.find(u8"[Object.0]");
+                    if (alias == nullptr) {
+                        aul::logger::Warning(std::format(
+                            L"Failed to get 'グループ制御:対象レイヤー数' at layer {}, frame {}", cursor + 1, frame));
+                        continue;
+                    }
 
-                if (meta_st == std::string_view::npos || empty_st == std::string_view::npos) {
-                    continue;
-                }
-
-                const auto empty = object.substr(empty_st, object.find(u8"[Object.1]") - empty_st);
-
-                if (auto st = empty.find(u8"\n対象レイヤー数="); st != std::string_view::npos) {
-                    st += sizeof(u8"\n対象レイヤー数=") - 1uz;
-
-                    const auto range = string::ToNumber<int>(empty.substr(st, empty.find_first_of(u8"\r\n", st) - st));
+                    const auto range = string::ToNumber<int>(std::string_view{alias});
 
                     if (!range.has_value()) {
                         aul::logger::Warning(range.error().message());
                         continue;
                     }
 
-                    if (*range != 0 && *range < layer - i) {
+                    if (*range != 0 && *range < target - cursor) {
                         continue;
                     }
 
-                    handles.push_back(candidate);
-                    layer = i;
+                    row[i] = candidate;
+                    target = cursor;
+                    --cursor;
 
-                    const auto meta = object.substr(meta_st, empty_st - meta_st);
+                    /*
+                const auto meta = object.substr(meta_st, empty_st - meta_st);
 
-                    if (st = meta.find(u8"\ngroup.control="); st != std::string_view::npos) {
-                        st += sizeof(u8"\ngroup.control=") - 1uz;
+                if (st = meta.find(u8"\ngroup.control="); st != std::string_view::npos) {
+                    st += sizeof(u8"\ngroup.control=") - 1uz;
 
-                        if (meta.substr(st, meta.find_first_of(u8"\r\n", st) - st) == u8"0") {
-                            break;
-                        }
+                    if (meta.substr(st, meta.find_first_of(u8"\r\n", st) - st) == u8"0") {
+                        cursor = -1;
                     }
                 }
+                    */
+
+                    break;
+                }
             }
+
+            if (std::ranges::none_of(row, [](auto* handle) { return handle; })) {
+                break;
+            }
+
+            handles.Push(row);
         }
     }
 
     return handles;
 }
 
-[[nodiscard]] std::optional<std::vector<Transform>> GetEmpties(int frame, const FILTER_PROC_VIDEO* ctx) {
-    if (ctx->object->layer == 0) {
-        return std::vector<Transform>{};
+template <typename C>
+[[nodiscard]] inline auto BuildObjectTrace(const C& samples, const FILTER_PROC_VIDEO* ctx) {
+    constexpr size_t n = [] {
+        using D = std::decay_t<C>;
+        if constexpr (requires { D::extent; }) {
+            return D::extent;
+        } else {
+            return std::tuple_size_v<D>;
+        }
+    }();
+
+    auto sample = [&](size_t i) -> const Sample& {
+        if constexpr (std::is_pointer_v<std::decay_t<decltype(samples[0])>>) {
+            return *samples[i];
+        } else {
+            return samples[i];
+        }
+    };
+
+    std::array<int, n> frames;
+    std::array<Eigen::Vector2f, n> pivots;
+
+    for (size_t i = 0uz; i < n; ++i) {
+        const auto& smp = sample(i);
+        frames[i] = ctx->object->frame_s + smp.frame;
+        pivots[i] = smp.pivot;
     }
 
-    const auto handles = GetEmptyHandles(frame, ctx);
+    const auto handles = GetEmptyHandles(frames, ctx);
+    const size_t depth = handles.GetSize();
 
-    if (!handles.has_value()) {
-        return std::nullopt;
-    }
+    Table<n> xforms(depth + 1uz);
 
-    std::vector<Transform> empties(handles->size());
+    for (size_t i = 0uz; i < depth; ++i) {
+        const size_t k = depth - 1uz - i;
 
-    {
-        const double point = static_cast<double>(frame);
+        for (size_t j = 0uz; j < n; ++j) {
+            auto* const handle = handles[k, j];
 
-        for (size_t i = 0; i < handles->size(); ++i) {
-            auto* const handle = (*handles)[handles->size() - 1uz - i];
+            if (handle == nullptr) {
+                continue;
+            }
+
+            const double point = static_cast<double>(frames[j]);
 
             Transform xform{};
-
             double v;
 
             if (ctx->edit->get_effect_track_value(handle, L"X", point, &v)) {
@@ -354,129 +422,129 @@ static_assert(sizeof(Unit) == 64uz);
                 xform.rotation = ToRadians(static_cast<float>(v));
             }
 
-            empties[i] = std::move(xform);
+            xforms[i, j] = std::move(xform);
         }
     }
 
-    return empties;
-}
-
-[[nodiscard]] std::optional<Object::Snapshot> BuildObjectTransforms(const Sample& smp, const FILTER_PROC_VIDEO* ctx) {
-    auto xforms = GetEmpties(ctx->object->frame_s + smp.frame, ctx);
-
-    if (!xforms.has_value()) {
-        return std::nullopt;
+    for (size_t i = 0uz; i < n; ++i) {
+        xforms[depth, i] = sample(i).transform;
     }
 
-    xforms->push_back(smp.transform);
-
-    return Object::Snapshot{
-        .pivot = smp.pivot,
-        .transforms = std::move(*xforms),
+    return Object::Trace<n>{
+        .pivots = pivots,
+        .transforms = std::move(xforms),
     };
 }
 
-template <typename T>
-[[nodiscard]] T ClampVelocity(const T& velocity, const T& limit) {
-    return velocity.cwiseMax(limit.cwiseMin(0.0f)).cwiseMin(limit.cwiseMax(0.0f));
-}
+[[nodiscard]] inline Object::Trace<2uz> DuplicateTrace(const Sample& sample, const FILTER_PROC_VIDEO* ctx) {
+    const std::array samples{&sample};
+    const auto trace = BuildObjectTrace(samples, ctx);
+    const size_t depth = trace.transforms.GetSize();
 
-[[nodiscard]] float ClampVelocity(float velocity, float limit) {
-    return std::clamp(velocity, std::min(limit, 0.0f), std::max(limit, 0.0f));
-}
-
-template <typename T, typename F>
-[[nodiscard]] T Retrodict(F value_at, int order) {
-    const T v0 = value_at(0uz);
-    const T v1 = value_at(1uz);
-    const T d0 = v1 - v0;
-
-    if (order == 1) {
-        return v0 - d0;
-    }
-
-    const T d1 = value_at(2uz) - v1;
-    const T velocity = ((3.0f * d0) - d1) * 0.5f;
-    const T limit = 3.0f * d0;
-
-    return v0 - ClampVelocity(velocity, limit);
-}
-
-[[nodiscard]] std::optional<Object::Snapshot> Extrapolate(const std::vector<Sample>& samples,
-                                                          const Object::Snapshot& zero, const FILTER_PROC_VIDEO* ctx) {
-    namespace props = properties;
-
-    static const Transform identity{};
-
-    const int order = props::extrapolation::value;
-
-    if (order < 1 || order > 2 || static_cast<size_t>(order) >= samples.size()) {
-        return std::nullopt;
-    }
-
-    const size_t count = static_cast<size_t>(order) + 1uz;
-    std::array<Object::Snapshot, 3uz> snapshots{zero};
-
-    for (size_t i = 1uz; i < count; ++i) {
-        const auto& sample = samples[i];
-
-        if (sample.frame < 0) {
-            return std::nullopt;
-        }
-
-        auto xforms = BuildObjectTransforms(sample, ctx);
-
-        if (!xforms.has_value()) {
-            return std::nullopt;
-        }
-
-        snapshots[i] = std::move(*xforms);
-    }
-
-    size_t depth = 0uz;
-
-    for (size_t i = 0uz; i < count; ++i) {
-        depth = std::max(depth, snapshots[i].transforms.size());
-    }
-
-    Object::Snapshot snapshot{};
-
-    snapshot.pivot = Retrodict<Eigen::Vector2f>([&](size_t i) { return snapshots[i].pivot; }, order);
-    snapshot.transforms.resize(depth);
-
-    std::array<const std::vector<Transform>*, snapshots.size()> lists{};
-    std::array<size_t, snapshots.size()> offsets{};
-
-    for (size_t i = 0uz; i < snapshots.size(); ++i) {
-        lists[i] = &snapshots[i].transforms;
-        offsets[i] = depth - lists[i]->size();
-    }
+    Table<2uz> xforms(depth);
 
     for (size_t i = 0uz; i < depth; ++i) {
-        std::array<const Transform*, snapshots.size()> inputs{};
-
-        for (size_t j = 0uz; j < inputs.size(); ++j) {
-            inputs[j] = (i < offsets[j]) ? &identity : &(*lists[j])[i - offsets[j]];
-        }
-
-        auto& xform = snapshot.transforms[i];
-
-        xform = {
-            .position = Retrodict<Eigen::Vector2f>([&](size_t k) { return inputs[k]->position; }, order),
-            .scale =
-                Retrodict<Eigen::Vector2f>([&](size_t k) { return inputs[k]->scale.array().log().matrix(); }, order)
-                    .array()
-                    .exp()
-                    .matrix()
-                    .cwiseMax(kEpsilon),
-            .rotation = Retrodict<float>([&](size_t k) { return inputs[k]->rotation; }, order),
-        };
+        xforms[i, 0] = trace.transforms[i, 0];
+        xforms[i, 1] = trace.transforms[i, 0];
     }
 
-    return snapshot;
+    return Object::Trace<2uz>{
+        .pivots =
+            {
+                trace.pivots[0],
+                trace.pivots[0],
+            },
+        .transforms = std::move(xforms),
+    };
 }
 
-[[nodiscard]] std::optional<FrameMapping> BuildFrameMapping(const FILTER_PROC_VIDEO* ctx) {
+template <typename C>
+[[nodiscard]] inline auto Retrodict(const C& values) {
+    constexpr size_t n = [] {
+        using D = std::decay_t<C>;
+        if constexpr (requires { D::extent; }) {
+            return D::extent;
+        } else {
+            return std::tuple_size_v<D>;
+        }
+    }();
+
+    using T = std::decay_t<decltype(values[0])>;
+
+    return [&]<size_t... Is>(std::index_sequence<Is...>) -> T {
+        constexpr auto weights = [] {
+            std::array<float, n> w{1.0f};
+            float c = -static_cast<float>(n - 1uz);
+            for (size_t i = 1uz; i < n; ++i) {
+                w[0] += 1.0f / static_cast<float>(i);
+                w[i] = c / static_cast<float>(i);
+                c = -c * static_cast<float>(n - 1uz - i) / static_cast<float>(i + 1uz);
+            }
+            return w;
+        }();
+
+        auto clamp = [](const auto& v, const auto& lim) {
+            if constexpr (requires { v.cwiseMax(lim); }) {
+                return v.cwiseMax(lim.cwiseMin(0.0f)).cwiseMin(lim.cwiseMax(0.0f));
+            } else {
+                return std::clamp(v, std::min(lim, 0.0f), std::max(lim, 0.0f));
+            }
+        };
+
+        if constexpr (std::is_same_v<T, Transform>) {
+            return Transform{
+                .position = values[0].position - clamp(values[0].position - ((values[Is].position * weights[Is]) + ...),
+                                                       3.0f * (values[1].position - values[0].position)),
+                .scale =
+                    (values[0].scale.array().log().matrix() -
+                     clamp(values[0].scale.array().log().matrix() -
+                               (((values[Is].scale.array().log() * weights[Is]) + ...)).matrix(),
+                           3.0f * (values[1].scale.array().log().matrix() - values[0].scale.array().log().matrix())))
+                        .array()
+                        .exp()
+                        .matrix()
+                        .cwiseMax(kEpsilon),
+                .rotation = values[0].rotation - clamp(values[0].rotation - ((values[Is].rotation * weights[Is]) + ...),
+                                                       3.0f * (values[1].rotation - values[0].rotation)),
+            };
+        } else {
+            return T(values[0] - clamp(values[0] - ((values[Is] * weights[Is]) + ...), 3.0f * (values[1] - values[0])));
+        }
+    }(std::make_index_sequence<n>{});
+}
+
+template <size_t N>
+[[nodiscard]] Object::Trace<2uz> Extrapolate(std::span<const Sample, N> samples, const FILTER_PROC_VIDEO* ctx) {
+    static_assert(N >= 2uz);
+
+    for (size_t i = 0uz; i < N; ++i) {
+        if (samples[i].frame < 0) {
+            aul::logger::Warning(L"No cached frame available for extrapolation");
+            return DuplicateTrace(samples[0], ctx);
+        }
+    }
+
+    const auto trace = BuildObjectTrace(samples, ctx);
+    const size_t depth = trace.transforms.GetSize();
+
+    Table<2uz> xforms(depth);
+
+    for (size_t i = 0uz; i < depth; ++i) {
+        xforms[i, 0] = Retrodict(trace.transforms[i]);
+        xforms[i, 1] = trace.transforms[i, 0];
+    }
+
+    return Object::Trace<2uz>{
+        .pivots =
+            {
+                Retrodict(trace.pivots),
+                trace.pivots[0],
+            },
+        .transforms = std::move(xforms),
+    };
+}
+
+[[nodiscard]] FrameMapping BuildFrameMapping(const FILTER_PROC_VIDEO* ctx) {
     const auto span = ctx->object->frame_total - 1;
     const auto frame = std::clamp(ctx->object->frame, 0, span);
 
@@ -487,9 +555,8 @@ template <typename T, typename F>
         const auto df = static_cast<double>(frame - ctx->object->frame);
 
         if (!ctx->get_output_image_param(nullptr, df * spf, &base, sizeof(base))) {
-            aul::logger::Error(std::format(L"Failed to get object transform at layer {}, frame {}",
-                                           ctx->object->layer + 1, ctx->object->frame_s + ctx->object->frame));
-            return std::nullopt;
+            throw std::runtime_error(std::format("Failed to get object transform at layer {}, frame {}",
+                                                 ctx->object->layer + 1, ctx->object->frame_s + ctx->object->frame));
         }
     }
 
@@ -626,7 +693,7 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
     }
 }
 
-[[nodiscard]] const Instance* UpdateCache(const FILTER_PROC_VIDEO* ctx) {
+[[nodiscard]] const Instance& UpdateCache(const FILTER_PROC_VIDEO* ctx) {
     auto* const instance = static_cast<Instance*>(ctx->userdata);
 
     if (!instance->is_restored) {
@@ -652,19 +719,15 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
     {
         auto mapping = BuildFrameMapping(ctx);
 
-        if (!mapping.has_value()) {
-            return nullptr;
-        }
-
-        if (curr.frame >= 0 && curr.frame != mapping->frame) {
+        if (curr.frame >= 0 && curr.frame != mapping.frame) {
             prev.frame = curr.frame;
 
-            if (prev.sample.frame < 0 || curr.sample.frame != mapping->sample.frame) {
+            if (prev.sample.frame < 0 || curr.sample.frame != mapping.sample.frame) {
                 prev.sample = curr.sample;
             }
         }
 
-        curr = std::move(*mapping);
+        curr = std::move(mapping);
     }
 
     // この時点で curr.frame は 0 以上
@@ -678,7 +741,7 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
     samples[curr.frame] = curr.sample;
 
     if (prev.frame >= 0 && curr.frame >= 1 && prev.frame != curr.frame) {
-        if (auto df = curr.frame - prev.frame; df != 1) {
+        if (const auto df = curr.frame - prev.frame; df != 1) {
             aul::logger::Warning(std::format(L"Non-consecutive frames are not supported: expected {}, got {}",
                                              prev.frame + 1, curr.frame));
 
@@ -689,127 +752,84 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
                 };
 
                 aul::logger::Info(L"Replaced previous frame with a recorded sample");
-
-                return instance;
+            } else {
+                prev = FrameMapping{};
             }
-
-            const auto span = ctx->object->frame_total - 1;
-            df = std::clamp(df, -curr.frame, span - curr.frame);
-            const auto t = 1.0f / static_cast<float>(df);
-
-            const auto frame = std::lerp(static_cast<double>(curr.frame), static_cast<double>(prev.frame), 1.0 / df);
-
-            prev = {
-                .frame = curr.frame - 1,
-                .sample =
-                    {
-                        .pivot = Lerp(curr.sample.pivot, prev.sample.pivot, t),
-                        .transform =
-                            {
-                                Lerp(curr.sample.transform.position, prev.sample.transform.position, t),
-                                Lerp(curr.sample.transform.scale, prev.sample.transform.scale, t).cwiseMax(kEpsilon),
-                                std::lerp(curr.sample.transform.rotation, prev.sample.transform.rotation, t),
-                            },
-                        .frame = std::clamp(static_cast<int>(frame), 0, span),
-                    },
-            };
-
-            aul::logger::Info(L"Replaced previous frame with an estimate");
         }
     }
 
-    return instance;
+    return *instance;
 }
 
-[[nodiscard]] std::optional<Object> ResolveObject(const FILTER_PROC_VIDEO* ctx) {
+[[nodiscard]] Object ResolveObject(const FILTER_PROC_VIDEO* ctx) {
     namespace props = properties;
 
     const float angle = static_cast<float>(props::shutter::angle.value);
     const float amount = std::max(angle / 360.0f, 0.0f);
     const float phase = static_cast<float>(props::shutter::phase.value) / angle;
 
-    Object object;
+    const auto trace = [&]() -> Object::Trace<2uz> {
+        const auto& instance = UpdateCache(ctx);
+        const auto& state = instance.states[ctx->object->index];
+        const auto& curr = state.history[1uz].sample;
 
-    auto& rig = object.rig;
-    Object::Snapshot start, end;
-
-    const auto* instance = UpdateCache(ctx);
-
-    if (instance == nullptr) {
-        return std::nullopt;
-    }
-
-    const auto& state = instance->states[ctx->object->index];
-
-    if (const auto& curr = state.history[1uz]; curr.frame >= 0) {
-        if (auto xforms = BuildObjectTransforms(curr.sample, ctx); xforms.has_value()) {
-            start = std::move(*xforms);
-        } else {
-            return std::nullopt;
-        }
-    } else {
-        return std::nullopt;
-    }
-
-    if (ctx->object->origin_frame == ctx->object->frame_s) {
-        if (props::extrapolation::value > 0) {
-            if (auto xforms = Extrapolate(state.samples, start, ctx); xforms.has_value()) {
-                end = std::move(*xforms);
-            } else {
-                aul::logger::Warning(L"No cached frame available for extrapolation");
-                end = start;
+        if (ctx->object->origin_frame == ctx->object->frame_s) {
+            switch (props::extrapolation::value) {
+                case 1:
+                    if (state.samples.size() >= 2uz) {
+                        return Extrapolate<2uz>(std::span<const Sample, 2uz>(state.samples.data(), 2uz), ctx);
+                    }
+                    break;
+                case 2:
+                    if (state.samples.size() >= 3uz) {
+                        return Extrapolate<3uz>(std::span<const Sample, 3uz>(state.samples.data(), 3uz), ctx);
+                    }
+                    break;
+                default:
+                    return DuplicateTrace(curr, ctx);
             }
-        } else {
-            end = start;
-        }
-    } else if (const auto& prev = state.history[0uz].sample; prev.frame >= 0) {
-        if (auto xforms = BuildObjectTransforms(prev, ctx); xforms.has_value()) {
-            end = std::move(*xforms);
-        } else {
-            return std::nullopt;
-        }
-    } else {
-        aul::logger::Warning(L"No cached frame available");
-        end = start;
-    }
 
+            aul::logger::Warning(L"Insufficient frames for extrapolation");
+            return DuplicateTrace(curr, ctx);
+        }
+
+        if (const auto& prev = state.history[0uz].sample; prev.frame >= 0) {
+            const std::array samples{&prev, &curr};
+            return BuildObjectTrace(samples, ctx);
+        }
+
+        aul::logger::Warning(L"No cached frame available");
+        return DuplicateTrace(curr, ctx);
+    }();
+
+    Object object;
     object.dimensions = Eigen::Vector2i(ctx->object->width, ctx->object->height).cast<float>();
 
-    {
-        const Eigen::Vector2f center = object.dimensions * 0.5f;
-        start.pivot += center;
-        end.pivot += center;
-    }
+    const Eigen::Vector2f center = object.dimensions * 0.5f;
+    const Eigen::Vector2f pivot_st = trace.pivots[1] + center;
+    Eigen::Vector2f pivot_ed = trace.pivots[0] + center;
 
-    const auto n = std::ssize(start.transforms) - std::ssize(end.transforms);
-
-    if (n > 0) {
-        end.transforms.insert(end.transforms.begin(), n, Transform{});
-    } else if (n < 0) {
-        start.transforms.insert(start.transforms.begin(), -n, Transform{});
-    }
-
-    const size_t depth = start.transforms.size();
-
+    const size_t depth = trace.transforms.GetSize();
+    auto& rig = object.rig;
     rig.links.resize(depth);
 
-    end.pivot = Lerp(start.pivot, end.pivot, amount);
+    pivot_ed = Lerp(pivot_st, pivot_ed, amount);
     rig.pivot = {
-        .origin = start.pivot + (end.pivot - start.pivot) * phase,
-        .extent = end.pivot - start.pivot,
+        .origin = pivot_st + (pivot_ed - pivot_st) * phase,
+        .extent = pivot_ed - pivot_st,
     };
 
     for (size_t i = 0uz; i < depth; ++i) {
-        const auto& st = start.transforms[i];
-        auto& ed = end.transforms[i];
+        const auto& st = trace.transforms[i, 1];
+        auto ed = trace.transforms[i, 0];
 
         object.transform = object.transform * Eigen::Translation2f(st.position) * Eigen::Rotation2Df(st.rotation) *
                            Eigen::Scaling(st.scale);
 
-        const Eigen::Vector2f compensation_st = st.scale.cwiseInverse();
-        const Eigen::Vector2f compensation_ed = Lerp(compensation_st, ed.scale.cwiseInverse(), amount);
-        const Eigen::Vector2f compensation_shift = (compensation_ed - compensation_st) * phase;
-        const Eigen::Vector2f compensation_origin = (compensation_st + compensation_shift).cwiseMax(kEpsilon);
+        const Eigen::Vector2f cmp_st = st.scale.cwiseInverse();
+        const Eigen::Vector2f cmp_ed = Lerp(cmp_st, ed.scale.cwiseInverse(), amount);
+        const Eigen::Vector2f cmp_shift = (cmp_ed - cmp_st) * phase;
+        const Eigen::Vector2f cmp_origin = (cmp_st + cmp_shift).cwiseMax(kEpsilon);
 
         ed.position = Lerp(st.position, ed.position, amount);
         ed.rotation = std::lerp(st.rotation, ed.rotation, amount);
@@ -822,8 +842,8 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
                 },
             .compensation =
                 {
-                    .origin = compensation_origin,
-                    .extent = (compensation_ed + compensation_shift).cwiseMax(kEpsilon) - compensation_origin,
+                    .origin = cmp_origin,
+                    .extent = (cmp_ed + cmp_shift).cwiseMax(kEpsilon) - cmp_origin,
                 },
             .rotation =
                 {
@@ -833,7 +853,7 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
         };
     }
 
-    object.transform = object.transform * Eigen::Translation2f(-start.pivot);
+    object.transform = object.transform * Eigen::Translation2f(-pivot_st);
 
     return object;
 }
@@ -843,7 +863,7 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
 
     const float step = 1.0f / static_cast<float>(samples);
     const auto base_to_world = object.transform.inverse();
-    auto rotations = BuildRotations(object, step);
+    auto rotors = BuildRotors(object, step);
 
     const std::array<Eigen::Vector2f, 4uz> corners = {{
         Eigen::Vector2f::Zero(),
@@ -860,32 +880,32 @@ void RestoreCache(std::vector<State>& states, const FILTER_PROC_VIDEO* ctx) {
     for (int i = 0; i <= samples; ++i) {
         const auto t = step * static_cast<float>(i);
 
-        Eigen::Affine2f sample_to_base = base_to_world;
+        Eigen::Affine2f smp_to_base = base_to_world;
 
         for (size_t j = 0uz; j < rig.links.size(); ++j) {
             const auto& link = rig.links[j];
-            auto& rotation = rotations[j];
+            auto& rotor = rotors[j];
 
-            const Eigen::Vector2f position = link.position.origin + link.position.extent * t;
+            const Eigen::Vector2f pos = link.position.origin + link.position.extent * t;
             const Eigen::Vector2f scale = (link.compensation.origin + link.compensation.extent * t).cwiseInverse();
 
             Eigen::Matrix2f linear;
-            linear << rotation.origin.cos * scale.x(), -rotation.origin.sin * scale.y(),
-                rotation.origin.sin * scale.x(), rotation.origin.cos * scale.y();
+            linear << rotor.origin.cos * scale.x(), -rotor.origin.sin * scale.y(), rotor.origin.sin * scale.x(),
+                rotor.origin.cos * scale.y();
 
-            sample_to_base.translation() += sample_to_base.linear() * position;
-            sample_to_base.linear() *= linear;
+            smp_to_base.translation() += smp_to_base.linear() * pos;
+            smp_to_base.linear() *= linear;
 
-            rotation.origin = {
-                .cos = (rotation.origin.cos * rotation.extent.cos) - (rotation.origin.sin * rotation.extent.sin),
-                .sin = (rotation.origin.sin * rotation.extent.cos) + (rotation.origin.cos * rotation.extent.sin),
+            rotor.origin = {
+                .cos = (rotor.origin.cos * rotor.extent.cos) - (rotor.origin.sin * rotor.extent.sin),
+                .sin = (rotor.origin.sin * rotor.extent.cos) + (rotor.origin.cos * rotor.extent.sin),
             };
         }
 
         const Eigen::Vector2f pivot = rig.pivot.origin + rig.pivot.extent * t;
 
-        const Eigen::Vector2f origin = sample_to_base * -pivot;
-        const auto linear = sample_to_base.linear();
+        const Eigen::Vector2f origin = smp_to_base * -pivot;
+        const auto linear = smp_to_base.linear();
 
         std::array<Eigen::Vector2f, 4uz> curr{};
         for (size_t j = 0uz; j < corners.size(); ++j) {
@@ -911,7 +931,7 @@ void CreateTrajectory(const Object& object, int samples, std::vector<renderer::F
     const auto& rig = object.rig;
 
     const float step = 1.0f / static_cast<float>(samples);
-    auto rotations = BuildRotations(object, step);
+    auto rotors = BuildRotors(object, step);
     trajectory.resize(samples);
 
     for (int i = 0; i < samples; ++i) {
@@ -920,21 +940,21 @@ void CreateTrajectory(const Object& object, int samples, std::vector<renderer::F
 
         for (size_t j = 0uz; j < rig.links.size(); ++j) {
             const auto& link = rig.links[j];
-            auto& rotation = rotations[j];
+            auto& rotor = rotors[j];
 
-            const Eigen::Vector2f position = link.position.origin + link.position.extent * t;
-            const Eigen::Vector2f compensation = link.compensation.origin + link.compensation.extent * t;
+            const Eigen::Vector2f pos = link.position.origin + link.position.extent * t;
+            const Eigen::Vector2f cmp = link.compensation.origin + link.compensation.extent * t;
 
             Eigen::Matrix2f linear;
-            linear << compensation.x() * rotation.origin.cos, compensation.x() * rotation.origin.sin,
-                -compensation.y() * rotation.origin.sin, compensation.y() * rotation.origin.cos;
+            linear << cmp.x() * rotor.origin.cos, cmp.x() * rotor.origin.sin, -cmp.y() * rotor.origin.sin,
+                cmp.y() * rotor.origin.cos;
 
-            node.translation() = linear * (node.translation() - position);
+            node.translation() = linear * (node.translation() - pos);
             node.linear() = linear * node.linear();
 
-            rotation.origin = {
-                .cos = (rotation.origin.cos * rotation.extent.cos) - (rotation.origin.sin * rotation.extent.sin),
-                .sin = (rotation.origin.sin * rotation.extent.cos) + (rotation.origin.cos * rotation.extent.sin),
+            rotor.origin = {
+                .cos = (rotor.origin.cos * rotor.extent.cos) - (rotor.origin.sin * rotor.extent.sin),
+                .sin = (rotor.origin.sin * rotor.extent.cos) + (rotor.origin.cos * rotor.extent.sin),
             };
         }
 
@@ -963,9 +983,12 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         return true;
     }
 
-    const auto object = ResolveObject(ctx);
+    Object object;
 
-    if (!object.has_value()) {
+    try {
+        object = ResolveObject(ctx);
+    } catch (const std::exception& e) {
+        aul::logger::Error(e.what());
         return false;
     }
 
@@ -973,7 +996,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                            ? static_cast<int>(props::sampling::render::sample_limit.value)
                            : static_cast<int>(props::sampling::viewport::sample_limit.value);
 
-    const auto metrics = ComputeMotionMetrics(*object, std::max(limit / 8, 2));
+    const auto metrics = ComputeMotionMetrics(object, std::max(limit / 8, 2));
     const int required_samples = static_cast<int>(std::clamp(std::ceil(metrics.length) + 1.0f, 2.0f, 65536.0f));
 
     const int32_t samples = std::clamp(limit, 2, required_samples);
@@ -995,10 +1018,10 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                 origin = metrics.box.min();
             }
 
-            Eigen::Map<Eigen::Vector2f>(&ctx->param->cx) -= origin + (resolution - object->dimensions) * 0.5f;
+            Eigen::Map<Eigen::Vector2f>(&ctx->param->cx) -= origin + (resolution - object.dimensions) * 0.5f;
         } else {
             origin = Eigen::Vector2f::Zero();
-            resolution = object->dimensions;
+            resolution = object.dimensions;
         }
 
         if (!ctx->copy_image_resource(L"resource:image", nullptr)) {
@@ -1062,7 +1085,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
         }
 
         thread_local std::vector<renderer::Float2x3> trajectory;
-        CreateTrajectory(*object, samples, trajectory);
+        CreateTrajectory(object, samples, trajectory);
 
         int map_w, _;
         ctx->get_image_resource_size(L"resource:map", &map_w, &_);
@@ -1082,14 +1105,14 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                 {
 
                     {
-                        object->transform(0, 0),
-                        object->transform(0, 1),
-                        object->transform(0, 2),
+                        object.transform(0, 0),
+                        object.transform(0, 1),
+                        object.transform(0, 2),
                     },
                     {
-                        object->transform(1, 0),
-                        object->transform(1, 1),
-                        object->transform(1, 2),
+                        object.transform(1, 0),
+                        object.transform(1, 1),
+                        object.transform(1, 2),
                     },
                 },
             .origin =
@@ -1099,8 +1122,8 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                 },
             .texel =
                 {
-                    1.0f / object->dimensions.x(),
-                    1.0f / object->dimensions.y(),
+                    1.0f / object.dimensions.x(),
+                    1.0f / object.dimensions.y(),
                 },
             .mix =
                 {

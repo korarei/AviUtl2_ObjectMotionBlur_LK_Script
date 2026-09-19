@@ -3,6 +3,7 @@
 ## v2.0.2
 
 - `ObjectMotionBlur_LK` の要求画像サイズを最大画像サイズで制限し処理を止めないように修正
+- `ObjectMotionBlur_LK` の内挿補間処理を削除
 
 ## v2.0.1
 
