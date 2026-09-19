@@ -39,7 +39,7 @@ website = "https://github.com/korarei/AviUtl2_ObjectMotionBlur_LK_Script"
 report-issue = "https://github.com/korarei/AviUtl2_ObjectMotionBlur_LK_Script/issues"
 summary = "AviUtl ExEdit2 向けモーションブラーエフェクト"
 description = """
-AviUtl ExEdit2 向け軽量モーションブラエフェクト．
+AviUtl ExEdit2 向け軽量モーションブラーエフェクト．
 
 以下の機能が追加される．
 

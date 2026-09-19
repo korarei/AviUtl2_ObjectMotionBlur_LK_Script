@@ -6,7 +6,7 @@
 [![GitHub Release][releases-badge]][releases-url]
 [![AviUtl2 Catalog][catalog-badge]][catalog-url]
 
-AviUtl ExEdit2 向け軽量モーションブラエフェクト．
+AviUtl ExEdit2 向け軽量モーションブラーエフェクト．
 
 以下の機能が追加される．
 
