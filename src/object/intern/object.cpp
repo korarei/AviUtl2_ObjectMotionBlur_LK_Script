@@ -980,15 +980,25 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 
     {
         Eigen::Vector2f origin;
-        Eigen::Vector2f size;
+        Eigen::Vector2f resolution;
 
         if (props::should_resize.value) {
-            origin = metrics.box.min();
-            size = metrics.box.sizes().array().ceil();
-            Eigen::Map<Eigen::Vector2f>(&ctx->param->cx) -= origin + (size - object->dimensions) * 0.5f;
+            const auto size = metrics.box.sizes().array().ceil();
+
+            if ((size > 16384.0f).any()) {
+                aul::logger::Warning(L"Image size exceeds maximum limit of 16384x16384");
+
+                resolution = size.cwiseMin(16384.0f);
+                origin = metrics.box.min() + ((size.matrix() - resolution) * 0.5f);
+            } else {
+                resolution = size;
+                origin = metrics.box.min();
+            }
+
+            Eigen::Map<Eigen::Vector2f>(&ctx->param->cx) -= origin + (resolution - object->dimensions) * 0.5f;
         } else {
             origin = Eigen::Vector2f::Zero();
-            size = object->dimensions;
+            resolution = object->dimensions;
         }
 
         if (!ctx->copy_image_resource(L"resource:image", nullptr)) {
@@ -996,7 +1006,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             return false;
         }
 
-        ctx->set_image_data(nullptr, static_cast<int>(size.x()), static_cast<int>(size.y()));
+        ctx->set_image_data(nullptr, static_cast<int>(resolution.x()), static_cast<int>(resolution.y()));
 
         {
             static constexpr PIXEL_RGBA clear{0, 0, 0, 0};
@@ -1012,7 +1022,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
 
                     const auto src = std::format(L"image:{}", path);
                     if (!ctx->copy_image_resource(L"resource:map", src.c_str())) {
-                        aul::logger::Error(std::format(L"Failed to copy image '{}' to 'resource:map'", path));
+                        aul::logger::Error(std::format(L"Failed to copy image '{}' to 'resource:map'", src));
                         return false;
                     }
                 } else {
@@ -1034,7 +1044,6 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
                     return false;
                 } else {
                     const auto src = std::format(L"layer:{}+", map_layer);
-
                     if (!ctx->copy_image_resource(L"resource:map", src.c_str())) {
                         aul::logger::Error(std::format(L"Failed to copy image '{}' to image 'resource:map'", src));
                         return false;
@@ -1106,7 +1115,7 @@ bool Apply(FILTER_PROC_VIDEO* ctx) {
             .samples = samples,
             .map_inset = 0.5f / static_cast<float>(map_w),
             .alpha_mode = static_cast<float>(props::compositing::alpha_mode::value),
-            .seed = static_cast<float>(size.x() * size.y()),
+            .seed = static_cast<float>(resolution.x() * resolution.y()),
         };
 
         const auto ec = renderer::Render(dst, [&target, &param](const renderer::Context& ctx) -> std::error_code {
