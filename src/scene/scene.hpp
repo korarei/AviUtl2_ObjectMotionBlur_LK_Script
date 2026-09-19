@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <cstdint>  // IWYU pragma: keep
+
 #include <plugin2.h>
 
 namespace blur::scene {

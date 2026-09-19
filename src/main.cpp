@@ -1,5 +1,7 @@
 #include <windows.h>
 
+#include <cstdint>  // IWYU pragma: keep
+
 #include <logger2.h>
 #include <plugin2.h>
 
