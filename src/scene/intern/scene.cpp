@@ -1,7 +1,6 @@
 #include "../scene.hpp"
 
 #include <algorithm>
-#include <cstdint>  // IWYU pragma: keep
 #include <format>
 #include <utility>
 

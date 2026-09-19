@@ -272,6 +272,13 @@ template <size_t N>
         return handles;
     }
 
+    {
+        auto* const object_handle = ctx->get_image_object(ctx->object->layer, 0.0);
+        if (object_handle == nullptr || !ctx->edit->get_object_flag(object_handle, OBJECT_FLAG_TYPE::ENABLE_GROUP)) {
+            return handles;
+        }
+    }
+
     handles.Reserve(ctx->object->layer);
 
     {
@@ -325,19 +332,12 @@ template <size_t N>
 
                     row[i] = candidate;
                     target = cursor;
-                    --cursor;
 
-                    /*
-                const auto meta = object.substr(meta_st, empty_st - meta_st);
-
-                if (st = meta.find(u8"\ngroup.control="); st != std::string_view::npos) {
-                    st += sizeof(u8"\ngroup.control=") - 1uz;
-
-                    if (meta.substr(st, meta.find_first_of(u8"\r\n", st) - st) == u8"0") {
+                    if (ctx->edit->get_object_flag(object_handle, OBJECT_FLAG_TYPE::ENABLE_GROUP)) {
+                        --cursor;
+                    } else {
                         cursor = -1;
                     }
-                }
-                    */
 
                     break;
                 }
